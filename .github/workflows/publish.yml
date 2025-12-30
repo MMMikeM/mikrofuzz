@@ -20,7 +20,6 @@ jobs:
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
-          cache: 'pnpm'
       - run: pnpm install
       - run: pnpm build
       - run: pnpm publish --provenance --access public --no-git-checks
