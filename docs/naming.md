@@ -1,9 +1,16 @@
 # Naming audit
 
-An audit of the vocabulary used across `src/`. This is **documentation only** —
-it records what each term means today and flags where the same concept is named
-inconsistently, with a recommended canonical name per case. No identifiers were
-renamed in producing it; the recommendations are for a future rename PR.
+An audit of the vocabulary used across `src/`. It records what each term means
+and flags where the same concept was named inconsistently, with a canonical name
+per case.
+
+**Status:** the canonical names are now applied in `fuzzy.ts`, `match.ts`, and
+`search.ts` — items (a)–(g), (i), (l), (m), (o) below. The remaining items
+(h, j, k, n) stay doc-only because they touch the public API (`FuzzyResult.matches`,
+`FuzzySearchOptions.getText`, the `text` param of `fuzzyMatch`, the `"off"`
+strategy) or the code is intentionally left as-is. The Nouns/Verbs tables above
+describe the pre-rename vocabulary and its history; the canonical glossary at the
+bottom is the current state.
 
 ## Nouns
 
@@ -62,7 +69,10 @@ renamed in producing it; the recommendations are for a future rename PR.
 
 ## Inconsistencies
 
-Each is a recommendation only; nothing below is applied yet.
+Applied items are marked ✅; doc-only items are marked ✍️.
+
+- ✅ **(a)–(g), (i), (l), (m), (o)** — applied in `fuzzy.ts` / `match.ts` / `search.ts`.
+- ✍️ **(h), (j), (k), (n)** — left as-is (public API or intentional).
 
 - **(a) `item` overloaded** — a single raw field-string (`matchesFuzzily`) vs the whole
   collection element (`FuzzyResult.item`). → Reserve `item` for the element (it's baked

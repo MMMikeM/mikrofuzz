@@ -1,10 +1,10 @@
 /**
  * Public search entry points: `fuzzyMatch` for a single string, and
  * `createFuzzySearch` for a preprocessed collection. Both delegate ranking to
- * `matchesFuzzily`; this file owns query/field preprocessing and result sorting.
+ * `matchField`; this file owns query/field preprocessing and result sorting.
  */
 
-import { matchesFuzzily } from "./match";
+import { matchField } from "./match";
 import { normalizeText } from "./normalize";
 import type { FuzzyMatches, FuzzyResult, FuzzySearcher, FuzzySearchOptions } from "./types";
 
@@ -19,13 +19,13 @@ const sortByScore = <T>(a: FuzzyResult<T>, b: FuzzyResult<T>): number => a.score
 export const fuzzyMatch = (text: string, query: string): FuzzyResult<string> | null => {
 	const normalizedQuery = normalizeText(query);
 	const queryWords = normalizedQuery.split(" ");
-	const normalizedText = normalizeText(text);
-	const itemWords = new Set(normalizedText.split(" "));
+	const normalizedField = normalizeText(text);
+	const fieldWords = new Set(normalizedField.split(" "));
 
-	const result = matchesFuzzily(
+	const result = matchField(
 		text,
-		normalizedText,
-		itemWords,
+		normalizedField,
+		fieldWords,
 		query,
 		normalizedQuery,
 		queryWords,
@@ -63,20 +63,20 @@ export const createFuzzySearch = <T>(
 ): FuzzySearcher<T> => {
 	const { strategy = "smart", getText, key } = options;
 
-	const preprocessed = collection.map((element) => {
+	const preprocessed = collection.map((item) => {
 		const texts = getText
-			? getText(element)
+			? getText(item)
 			: key
-				? [(element as Record<string, string>)[key]]
-				: [element as unknown as string];
+				? [(item as Record<string, string>)[key]]
+				: [item as unknown as string];
 
-		const processed = texts.map((text) => {
-			const item = text || "";
-			const normalized = normalizeText(item);
-			return [item, normalized, new Set(normalized.split(" "))] as const;
+		const fields = texts.map((text) => {
+			const field = text || "";
+			const normalizedField = normalizeText(field);
+			return [field, normalizedField, new Set(normalizedField.split(" "))] as const;
 		});
 
-		return [element, processed] as const;
+		return [item, fields] as const;
 	});
 
 	return (query: string) => {
@@ -86,15 +86,15 @@ export const createFuzzySearch = <T>(
 
 		if (!normalizedQuery.length) return [];
 
-		for (const [element, texts] of preprocessed) {
+		for (const [item, fields] of preprocessed) {
 			let bestScore = MAX_SAFE_INTEGER;
 			const matches: FuzzyMatches = [];
 
-			for (const [item, normalizedItem, itemWords] of texts) {
-				const result = matchesFuzzily(
-					item,
-					normalizedItem,
-					itemWords,
+			for (const [field, normalizedField, fieldWords] of fields) {
+				const result = matchField(
+					field,
+					normalizedField,
+					fieldWords,
 					query,
 					normalizedQuery,
 					queryWords,
@@ -109,7 +109,7 @@ export const createFuzzySearch = <T>(
 			}
 
 			if (bestScore < MAX_SAFE_INTEGER) {
-				results.push({ item: element, score: bestScore, matches });
+				results.push({ item, score: bestScore, matches });
 			}
 		}
 

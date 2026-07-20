@@ -20,51 +20,51 @@ const SCORES = {
 	CONTAINS: 2,
 } as const;
 
-const sortRangeTuple = (a: Range, b: Range): number => a[0] - b[0];
+const sortByRangeStart = (a: Range, b: Range): number => a[0] - b[0];
 
-export const matchesFuzzily = (
-	item: string,
-	normalizedItem: string,
-	itemWords: Set<string>,
+export const matchField = (
+	field: string,
+	normalizedField: string,
+	fieldWords: Set<string>,
 	query: string,
 	normalizedQuery: string,
 	queryWords: string[],
 	strategy: FuzzySearchStrategy,
 ): [number, HighlightRanges] | null => {
-	if (item === query) return [SCORES.EXACT, [[0, item.length - 1]]];
+	if (field === query) return [SCORES.EXACT, [[0, field.length - 1]]];
 
 	const queryLen = query.length;
-	const normalizedItemLen = normalizedItem.length;
+	const normalizedFieldLen = normalizedField.length;
 	const normalizedQueryLen = normalizedQuery.length;
 
-	if (normalizedItem === normalizedQuery) return [SCORES.NORMALIZED_EXACT, [[0, normalizedItemLen - 1]]];
-	if (normalizedItem.startsWith(normalizedQuery)) return [SCORES.PREFIX, [[0, normalizedQueryLen - 1]]];
+	if (normalizedField === normalizedQuery) return [SCORES.NORMALIZED_EXACT, [[0, normalizedFieldLen - 1]]];
+	if (normalizedField.startsWith(normalizedQuery)) return [SCORES.PREFIX, [[0, normalizedQueryLen - 1]]];
 
-	const exactContainsIdx = item.indexOf(query);
-	if (exactContainsIdx > -1 && isValidWordBoundary(item[exactContainsIdx - 1])) {
+	const exactContainsIdx = field.indexOf(query);
+	if (exactContainsIdx > -1 && isValidWordBoundary(field[exactContainsIdx - 1])) {
 		return [SCORES.BOUNDARY_EXACT, [[exactContainsIdx, exactContainsIdx + queryLen - 1]]];
 	}
 
-	const containsIdx = normalizedItem.indexOf(normalizedQuery);
-	if (containsIdx > -1 && isValidWordBoundary(normalizedItem[containsIdx - 1])) {
+	const containsIdx = normalizedField.indexOf(normalizedQuery);
+	if (containsIdx > -1 && isValidWordBoundary(normalizedField[containsIdx - 1])) {
 		return [SCORES.BOUNDARY, [[containsIdx, containsIdx + queryLen - 1]]];
 	}
 
-	if (queryWords.length > 1 && queryWords.every((w) => itemWords.has(w))) {
+	if (queryWords.length > 1 && queryWords.every((w) => fieldWords.has(w))) {
 		return [
 			SCORES.MULTI_WORD_BASE + queryWords.length * SCORES.MULTI_WORD_PER_WORD,
 			queryWords
 				.map((w) => {
-					const i = normalizedItem.indexOf(w);
+					const i = normalizedField.indexOf(w);
 					return [i, i + w.length - 1] as Range;
 				})
-				.sort(sortRangeTuple),
+				.sort(sortByRangeStart),
 		];
 	}
 
 	if (containsIdx > -1) return [SCORES.CONTAINS, [[containsIdx, containsIdx + queryLen - 1]]];
 
-	if (strategy === "aggressive") return aggressiveFuzzyMatch(normalizedItem, normalizedQuery);
-	if (strategy === "smart") return smartFuzzyMatch(normalizedItem, normalizedQuery);
+	if (strategy === "aggressive") return aggressiveFuzzyMatch(normalizedField, normalizedQuery);
+	if (strategy === "smart") return smartFuzzyMatch(normalizedField, normalizedQuery);
 	return null;
 };

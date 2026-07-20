@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Zero-dependency fuzzy search library with smart word-boundary matching",
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
