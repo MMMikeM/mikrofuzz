@@ -14,7 +14,8 @@
   "types": "./dist/index.d.mts",
   "files": [
     "dist",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "MIGRATION.md"
   ],
   "publishConfig": {
     "access": "public"

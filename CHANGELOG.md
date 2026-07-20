@@ -6,6 +6,8 @@ A primitive-first redesign. The library is now a rich single-string matcher
 (`fuzzyMatch`) plus a thin, cached collection search (`createFuzzySearch`) built on
 it — instead of one function with a growing options bag.
 
+See [MIGRATION.md](./MIGRATION.md) for a 0.x → 1.0 upgrade guide.
+
 ### Breaking
 
 - **`fuzzyMatch(text, query, options?)`** returns **`{ score, tier, ranges }`** (or

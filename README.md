@@ -8,6 +8,8 @@ Zero-dependency fuzzy search with smart word-boundary matching. ~2.4 kB gzip, ES
 pnpm add @mmmike/mikrofuzz
 ```
 
+> **Upgrading from 0.x?** v1.0 is a breaking redesign — see [MIGRATION.md](./MIGRATION.md).
+
 ## Two entry points
 
 ### `fuzzyMatch` — score one string
