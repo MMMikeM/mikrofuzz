@@ -40,7 +40,7 @@ const users = [
 
 const search = createFuzzySearch(users, { key: "name" });
 const results = search("john");
-// [{ item: { id: 1, name: "John Doe" }, score: 1, matches: [...] }]
+// [{ item: { id: 1, name: "John Doe" }, score: 0.5, matches: [...] }]
 ```
 
 ### Search Multiple Fields

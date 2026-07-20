@@ -17,6 +17,7 @@
   "scripts": {
     "build": "unbuild",
     "lint:types": "tsc --noEmit",
+    "test": "vitest run",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -38,6 +39,7 @@
   },
   "devDependencies": {
     "typescript": "^5.7.0",
-    "unbuild": "^3.6.0"
+    "unbuild": "^3.6.0",
+    "vitest": "^4.1.10"
   }
 }
