@@ -16,6 +16,9 @@
   ],
   "scripts": {
     "build": "unbuild",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt src test",
     "lint:types": "tsc --noEmit",
     "test": "vitest run",
     "prepublishOnly": "npm run build"
@@ -38,6 +41,8 @@
     "url": "https://github.com/MMMikeM/mikrofuzz/issues"
   },
   "devDependencies": {
+    "oxfmt": "^0.59.0",
+    "oxlint": "^1.74.0",
     "typescript": "^5.7.0",
     "unbuild": "^3.6.0",
     "vitest": "^4.1.10"
