@@ -1,6 +1,6 @@
 # @mmmike/mikrofuzz
 
-Zero-dependency fuzzy search with smart word-boundary matching. ~2.5 kB gzip, ESM, fully typed. Adapted from [@nozbe/microfuzz](https://github.com/Nozbe/microfuzz) with ESM / Vite SSR compatibility.
+Zero-dependency fuzzy search with smart word-boundary matching. ~2.4 kB gzip, ESM, fully typed. Adapted from [@nozbe/microfuzz](https://github.com/Nozbe/microfuzz) with ESM / Vite SSR compatibility.
 
 ## Install
 
@@ -80,6 +80,37 @@ results.filter((r) => r.fields[0]?.tier !== "fuzzy"); // same, categorically
 | `smart` (default) | word boundaries or 3+ character chunks |
 | `aggressive` | any letters in order |
 | `off` | exact / prefix / boundary / contains only (no fuzzy) |
+
+## Performance
+
+Measured on commodity hardware over short-string lists. **Exact numbers vary per
+machine and dataset** — run `pnpm bench` for your own and treat these as relative
+positioning, not absolute.
+
+### Size
+
+| library | bundle (gzip) | deps |
+|---------|---------------|------|
+| **mikrofuzz** | **~2.4 kB** | none |
+| [match-sorter](https://github.com/kentcdodds/match-sorter) | ~4.1 kB | 2 |
+| [uFuzzy](https://github.com/leeoniya/uFuzzy) | ~8.7 kB | none |
+| [Fuse.js](https://www.fusejs.io/) | ~12.8 kB | none |
+
+### Speed
+
+Per query, over lists of short strings:
+
+| library | 2k items | vs mikrofuzz | 10k items | vs mikrofuzz |
+|---------|----------|--------------|-----------|--------------|
+| uFuzzy | 0.04 ms | +277% | 0.22 ms | +273% |
+| **mikrofuzz** | **0.16 ms** | **—** | **0.83 ms** | **—** |
+| match-sorter | 0.44 ms | −63% | 2.16 ms | −62% |
+| Fuse.js | 2.29 ms | −93% | 11.6 ms | −93% |
+
+`vs mikrofuzz` is throughput relative to mikrofuzz (positive = faster). Fuse.js
+trails because it does typo-tolerant matching the others don't — reach for it if
+you need that. For 100k+ corpora prefer uFuzzy or fuzzysort. Preprocessing is
+cached in `createFuzzySearch` (build once, query many).
 
 ## Building blocks
 
