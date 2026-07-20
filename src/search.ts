@@ -1,118 +1,150 @@
 /**
- * Public search entry points: `fuzzyMatch` for a single string, and
- * `createFuzzySearch` for a preprocessed collection. Both delegate ranking to
- * `matchField`; this file owns query/field preprocessing and result sorting.
+ * Public search entry points:
+ * - `fuzzyMatch` — the primitive: score one string against a query.
+ * - `createFuzzySearch` — a preprocessing-cached, sorted search over a collection,
+ *   built on the primitive. Second arg is a `getText` fn or an array of field specs.
  */
 
-import { matchField } from "./match";
-import { normalizeText } from "./normalize";
-import type { FuzzyMatches, FuzzyResult, FuzzySearcher, FuzzySearchOptions } from "./types";
+import { buildFuzzyGate } from "./fuzzy";
+import { matchField, type MatchQuery } from "./match";
+import { normalizeText, splitWords } from "./normalize";
+import type {
+	FieldSpec,
+	FuzzyResult,
+	FuzzySearcher,
+	MatchOptions,
+	MatchResult,
+	Strategy,
+} from "./types";
 
 const { MAX_SAFE_INTEGER } = Number;
 
 const sortByScore = <T>(a: FuzzyResult<T>, b: FuzzyResult<T>): number => a.score - b.score;
 
+// Build the query-derived state once, reused across every field.
+const prepareQuery = (query: string, normalizedQuery: string): MatchQuery => ({
+	query,
+	normalizedQuery,
+	queryWords: splitWords(normalizedQuery),
+	fuzzyGate: buildFuzzyGate(normalizedQuery),
+});
+
 /**
- * One-off fuzzy match of a single string against a query.
- * Use createFuzzySearch for searching collections.
+ * Score one string against a query. Returns { score, tier, ranges } or null.
  */
-export const fuzzyMatch = (text: string, query: string): FuzzyResult<string> | null => {
+export const fuzzyMatch = (
+	text: string,
+	query: string,
+	options: MatchOptions = {},
+): MatchResult | null => {
+	const { strategy = "smart", acronym = false } = options;
 	const normalizedQuery = normalizeText(query);
-	const queryWords = normalizedQuery.split(" ");
+	if (!normalizedQuery.length) return null;
+
+	const q = prepareQuery(query, normalizedQuery);
 	const normalizedField = normalizeText(text);
-	const fieldWords = new Set(normalizedField.split(" "));
+	const fieldWords = new Set(splitWords(normalizedField));
 
-	const result = matchField(
-		text,
+	return matchField(text, normalizedField, fieldWords, q, strategy, acronym);
+};
+
+// A preprocessed field: its cached normalized form plus its matching config.
+type PreparedField = {
+	field: string;
+	normalizedField: string;
+	fieldWords: Set<string>;
+	strategy: Strategy;
+	acronym: boolean;
+	penalty: number;
+};
+
+const prepareField = (
+	text: string | null,
+	strategy: Strategy,
+	acronym: boolean,
+	penalty: number,
+): PreparedField => {
+	const field = text || "";
+	const normalizedField = normalizeText(field);
+	return {
+		field,
 		normalizedField,
-		fieldWords,
-		query,
-		normalizedQuery,
-		queryWords,
-		"smart",
-	);
-
-	if (result) {
-		return { item: text, score: result[0], matches: [result[1]] };
-	}
-	return null;
+		fieldWords: new Set(splitWords(normalizedField)),
+		strategy,
+		acronym,
+		penalty,
+	};
 };
 
 /**
  * Creates a fuzzy search function for a collection.
  *
  * @example
- * // Search array of strings
- * const search = createFuzzySearch(['apple', 'banana', 'cherry']);
- * search('ban'); // [{ item: 'banana', score: 0.5, matches: [...] }]
+ * // Array of strings
+ * const search = createFuzzySearch(['apple', 'banana']);
+ * search('ban'); // [{ item: 'banana', score: 0.5, fields: [{ score: 0.5, tier: 'prefix', ranges: [[0, 2]] }] }]
  *
  * @example
- * // Search array of objects by key
- * const search = createFuzzySearch(users, { key: 'name' });
- * search('john');
+ * // Objects, one field
+ * const search = createFuzzySearch(users, (u) => u.name);
  *
  * @example
- * // Search multiple fields
- * const search = createFuzzySearch(users, {
- *   getText: (user) => [user.name, user.email]
- * });
+ * // Multiple fields, per-field config (body never outranks title)
+ * const search = createFuzzySearch(posts, [
+ *   { text: (p) => p.title, strategy: 'smart' },
+ *   { text: (p) => p.body, strategy: 'off', penalty: SCORES.CONTAINS },
+ * ]);
  */
-export const createFuzzySearch = <T>(
-	collection: T[],
-	options: FuzzySearchOptions = {},
-): FuzzySearcher<T> => {
-	const { strategy = "smart", getText, key } = options;
+export function createFuzzySearch(list: string[]): FuzzySearcher<string>;
+export function createFuzzySearch<T>(
+	list: T[],
+	getText: (item: T) => string | null,
+): FuzzySearcher<T>;
+export function createFuzzySearch<T>(list: T[], fields: FieldSpec<T>[]): FuzzySearcher<T>;
+export function createFuzzySearch<T>(
+	list: T[],
+	extract?: ((item: T) => string | null) | FieldSpec<T>[],
+): FuzzySearcher<T> {
+	const specs: FieldSpec<T>[] = !extract
+		? [{ text: (item) => item as unknown as string }]
+		: typeof extract === "function"
+			? [{ text: extract }]
+			: extract;
 
-	const preprocessed = collection.map((item) => {
-		const texts = getText
-			? getText(item)
-			: key
-				? [(item as Record<string, string>)[key]]
-				: [item as unknown as string];
-
-		const fields = texts.map((text) => {
-			const field = text || "";
-			const normalizedField = normalizeText(field);
-			return [field, normalizedField, new Set(normalizedField.split(" "))] as const;
-		});
-
-		return [item, fields] as const;
+	const preprocessed = list.map((item) => {
+		const prepared = specs.map((s) =>
+			prepareField(s.text(item), s.strategy ?? "smart", s.acronym ?? false, s.penalty ?? 0),
+		);
+		return [item, prepared] as const;
 	});
 
 	return (query: string) => {
-		const results: Array<FuzzyResult<T>> = [];
 		const normalizedQuery = normalizeText(query);
-		const queryWords = normalizedQuery.split(" ");
-
 		if (!normalizedQuery.length) return [];
 
-		for (const [item, fields] of preprocessed) {
-			let bestScore = MAX_SAFE_INTEGER;
-			const matches: FuzzyMatches = [];
+		const q = prepareQuery(query, normalizedQuery);
+		const results: Array<FuzzyResult<T>> = [];
 
-			for (const [field, normalizedField, fieldWords] of fields) {
-				const result = matchField(
-					field,
-					normalizedField,
-					fieldWords,
-					query,
-					normalizedQuery,
-					queryWords,
-					strategy,
-				);
+		for (const [item, prepared] of preprocessed) {
+			let bestScore = MAX_SAFE_INTEGER;
+			const fields: Array<MatchResult | null> = [];
+
+			for (const p of prepared) {
+				const result = matchField(p.field, p.normalizedField, p.fieldWords, q, p.strategy, p.acronym);
 				if (result) {
-					bestScore = Math.min(bestScore, result[0]);
-					matches.push(result[1]);
+					const effective = { ...result, score: result.score + p.penalty };
+					bestScore = Math.min(bestScore, effective.score);
+					fields.push(effective);
 				} else {
-					matches.push(null);
+					fields.push(null);
 				}
 			}
 
 			if (bestScore < MAX_SAFE_INTEGER) {
-				results.push({ item, score: bestScore, matches });
+				results.push({ item, score: bestScore, fields });
 			}
 		}
 
 		return results.sort(sortByScore);
 	};
-};
+}

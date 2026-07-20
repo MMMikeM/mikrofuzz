@@ -2,17 +2,18 @@
  * Fuzzy search library
  * Adapted from @nozbe/microfuzz with Vite SSR compatibility
  *
- * Scoring (lower = better):
- * - 0:    Exact match
- * - 0.1:  Case/diacritics-insensitive exact match
- * - 0.5:  Starts with query
- * - 0.9:  Contains query at word boundary (exact case)
- * - 1:    Contains query at word boundary
- * - 1.5+: Contains all query words (in any order)
- * - 2:    Contains query anywhere
- * - 2+:   Fuzzy match (fewer chunks = better)
+ * Two entry points:
+ * - `fuzzyMatch(text, query, options?)` — the primitive: score one string,
+ *   returning `{ score, tier, ranges }`.
+ * - `createFuzzySearch(list, getText? | fields?)` — a cached, sorted search over
+ *   a collection.
+ *
+ * Scoring is lower = better; see the `SCORES` constants and the `Tier` type.
+ * Any score greater than `SCORES.CONTAINS` is tier "fuzzy".
  */
 
 export { createFuzzySearch, fuzzyMatch } from "./search";
-export { normalizeText } from "./normalize";
+export { normalizeText, splitWords } from "./normalize";
+export { matchDensity } from "./density";
+export { SCORES } from "./scores";
 export type * from "./types";

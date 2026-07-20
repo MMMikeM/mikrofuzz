@@ -9,41 +9,75 @@ export type Range = [number, number];
 export type HighlightRanges = Range[];
 
 /**
- * Match results for each text field. Null if that field didn't match.
+ * Fuzzy match strategy (selects the fuzzy fallback tier):
+ * - 'off': no fuzzy matching, only exact/prefix/boundary/contains
+ * - 'smart': matches at word boundaries or 3+ char chunks (default)
+ * - 'aggressive': classic fuzzy — matches any letters in order
  */
-export type FuzzyMatches = Array<HighlightRanges | null>;
+export type Strategy = "off" | "smart" | "aggressive";
 
 /**
- * Result of fuzzy matching against an item.
- * Lower score = better match (think "error level")
+ * Which tier a match came from. Lower on this list is a weaker match; a `score`
+ * greater than SCORES.CONTAINS is always tier "fuzzy".
+ */
+export type Tier =
+	| "exact"
+	| "normalized-exact"
+	| "prefix"
+	| "boundary-exact"
+	| "boundary"
+	| "multi-word"
+	| "acronym"
+	| "contains"
+	| "fuzzy";
+
+/**
+ * The result of matching one string against a query.
+ * Lower score = better match (think "error level").
+ */
+export type MatchResult = {
+	score: number;
+	tier: Tier;
+	ranges: HighlightRanges;
+};
+
+/**
+ * Options for the fuzzyMatch primitive.
+ */
+export type MatchOptions = {
+	/** Fuzzy fallback strategy (default: 'smart'). */
+	strategy?: Strategy;
+	/** Enable the acronym (word-initials) tier (default: false). */
+	acronym?: boolean;
+};
+
+/**
+ * One searchable field of an item, with its matching configuration.
+ */
+export type FieldSpec<T = unknown> = {
+	/** Extract this field's text from an item (null → this field is skipped). */
+	text: (item: T) => string | null;
+	/** Fuzzy strategy for this field (default: 'smart'). */
+	strategy?: Strategy;
+	/** Enable the acronym tier for this field (default: false). */
+	acronym?: boolean;
+	/** Added to this field's score; higher demotes it (default: 0, keep >= 0).
+	 *  e.g. `penalty: SCORES.CONTAINS` keeps this field below better tiers elsewhere. */
+	penalty?: number;
+};
+
+/**
+ * A ranked search result for one collection item.
  */
 export type FuzzyResult<T> = {
 	item: T;
+	/** Best (minimum) effective score across the item's fields. */
 	score: number;
-	matches: FuzzyMatches;
+	/** Per-field match, null where that field didn't match. */
+	fields: Array<MatchResult | null>;
 };
 
 /**
- * Fuzzy search strategy:
- * - 'off': No fuzzy matching, only exact/prefix/contains
- * - 'smart': Matches at word boundaries or 3+ char chunks (default)
- * - 'aggressive': Classic fuzzy - matches any letters in order
- */
-export type FuzzySearchStrategy = "off" | "smart" | "aggressive";
-
-/**
- * Options for createFuzzySearch
- */
-export type FuzzySearchOptions = {
-	/** Property key to search (for object arrays) */
-	key?: string;
-	/** Custom function to extract searchable strings from items */
-	getText?: (item: unknown) => Array<string | null>;
-	/** Search strategy (default: 'smart') */
-	strategy?: FuzzySearchStrategy;
-};
-
-/**
- * A prepared fuzzy search function
+ * A prepared fuzzy search function.
  */
 export type FuzzySearcher<T> = (query: string) => Array<FuzzyResult<T>>;

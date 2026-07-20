@@ -1,141 +1,116 @@
 # @mmmike/mikrofuzz
 
-Zero-dependency fuzzy search library with smart word-boundary matching. Adapted from [@nozbe/microfuzz](https://github.com/Nozbe/microfuzz) with ESM and Vite SSR compatibility.
+Zero-dependency fuzzy search with smart word-boundary matching. ~2.5 kB gzip, ESM, fully typed. Adapted from [@nozbe/microfuzz](https://github.com/Nozbe/microfuzz) with ESM / Vite SSR compatibility.
 
-## Features
-
-- **Zero dependencies** - Pure JavaScript implementation
-- **Smart matching** - Prioritizes word boundaries over arbitrary letter matches
-- **Scoring system** - Lower scores = better matches
-- **TypeScript** - Full type definitions included
-- **Highlight ranges** - Returns match positions for highlighting
-
-## Installation
+## Install
 
 ```bash
-npm install @mmmike/mikrofuzz
+pnpm add @mmmike/mikrofuzz
 ```
 
-## Usage
+## Two entry points
 
-### Search an Array of Strings
-
-```typescript
-import { createFuzzySearch } from "@mmmike/mikrofuzz";
-
-const fruits = ["apple", "banana", "cherry", "grape"];
-const search = createFuzzySearch(fruits);
-
-const results = search("ban");
-// [{ item: "banana", score: 0.5, matches: [[[0, 2]]] }]
-```
-
-### Search Objects by Key
-
-```typescript
-const users = [
-  { id: 1, name: "John Doe" },
-  { id: 2, name: "Jane Smith" },
-];
-
-const search = createFuzzySearch(users, { key: "name" });
-const results = search("john");
-// [{ item: { id: 1, name: "John Doe" }, score: 0.5, matches: [...] }]
-```
-
-### Search Multiple Fields
-
-```typescript
-const users = [
-  { name: "John Doe", email: "john@example.com" },
-  { name: "Jane Smith", email: "jane@example.com" },
-];
-
-const search = createFuzzySearch(users, {
-  getText: (user) => [user.name, user.email],
-});
-
-const results = search("john");
-// Matches both name and email fields
-```
-
-### One-Off Match
+### `fuzzyMatch` — score one string
 
 ```typescript
 import { fuzzyMatch } from "@mmmike/mikrofuzz";
 
-const result = fuzzyMatch("Hello World", "wor");
-// { item: "Hello World", score: 1, matches: [[[6, 8]]] }
+fuzzyMatch("Hello World", "wor");
+// { score: 1, tier: "boundary", ranges: [[6, 8]] }
+
+fuzzyMatch("cherry", "xyz"); // null
 ```
+
+Options: `fuzzyMatch(text, query, { strategy?, acronym? })`.
+
+### `createFuzzySearch` — search a collection
+
+```typescript
+import { createFuzzySearch, SCORES } from "@mmmike/mikrofuzz";
+
+// array of strings
+const search = createFuzzySearch(["apple", "banana", "cherry"]);
+search("ban");
+// [{ item: "banana", score: 0.5, fields: [{ score: 0.5, tier: "prefix", ranges: [[0, 2]] }] }]
+
+// objects — a function extracts the text to search
+const byName = createFuzzySearch(users, (u) => u.name);
+byName("john");
+
+// multiple fields, per-field config
+const search = createFuzzySearch(posts, [
+  { text: (p) => p.title, strategy: "smart" },
+  { text: (p) => p.body, strategy: "off", penalty: SCORES.CONTAINS }, // body never outranks title
+]);
+```
+
+Results are sorted best-first (stable), and preprocessing is cached — build once, query many.
 
 ## Scoring
 
-Lower scores indicate better matches:
+Lower is better. Each match reports a numeric `score` (for sorting) and a categorical `tier`:
 
-| Score | Match Type |
-|-------|------------|
-| 0 | Exact match |
-| 0.1 | Case/diacritics-insensitive exact match |
-| 0.5 | Starts with query |
-| 0.9 | Contains at word boundary (exact case) |
-| 1 | Contains at word boundary |
-| 1.5+ | Contains all query words (any order) |
-| 2 | Contains query anywhere |
-| 2+ | Fuzzy match (fewer chunks = better) |
+| score | tier | meaning |
+|-------|------|---------|
+| 0 | `exact` | exact match |
+| 0.1 | `normalized-exact` | case / diacritics-insensitive exact |
+| 0.5 | `prefix` | starts with query |
+| 0.9 | `boundary-exact` | at a word boundary, exact case |
+| 1 | `boundary` | at a word boundary |
+| 1.5 | `multi-word` | all query words present, any order |
+| 1.8 | `acronym` | word initials (opt-in via `acronym: true`) |
+| 2 | `contains` | contains query anywhere |
+| > 2 | `fuzzy` | fuzzy chain (fewer chunks = better) |
 
-## Search Strategies
+Import `SCORES` for thresholds and penalties; or read `tier` directly:
 
 ```typescript
-const search = createFuzzySearch(items, { strategy: "smart" }); // default
+results.filter((r) => r.score <= SCORES.CONTAINS); // drop fuzzy chains
+results.filter((r) => r.fields[0]?.tier !== "fuzzy"); // same, categorically
 ```
 
-| Strategy | Description |
-|----------|-------------|
-| `"smart"` | Matches at word boundaries or 3+ character chunks |
-| `"aggressive"` | Classic fuzzy matching (any letters in order) |
-| `"off"` | Only exact, prefix, and contains matching |
+> **Long text:** fuzzy strategies assemble short queries out of scattered chunks, so over
+> document-length text almost anything "matches". Scope `smart`/`aggressive` to short labels
+> (titles, names); use `strategy: "off"` for long body text.
 
-## API Reference
+## Strategies
 
-### `createFuzzySearch<T>(collection, options?)`
+| strategy | matches |
+|----------|---------|
+| `smart` (default) | word boundaries or 3+ character chunks |
+| `aggressive` | any letters in order |
+| `off` | exact / prefix / boundary / contains only (no fuzzy) |
 
-Creates a reusable search function for a collection.
+## Building blocks
 
-**Options:**
-- `key?: string` - Property name to search (for object arrays)
-- `getText?: (item: T) => Array<string | null>` - Custom text extraction
-- `strategy?: "smart" | "aggressive" | "off"` - Matching strategy
-
-**Returns:** `(query: string) => FuzzyResult<T>[]`
-
-### `fuzzyMatch(text, query)`
-
-One-off fuzzy match for a single string.
-
-**Returns:** `FuzzyResult<string> | null`
-
-### `normalizeText(str)`
-
-Normalize text (lowercase, remove diacritics).
+- `normalizeText(str)` — lowercase, strip diacritics.
+- `splitWords(str)` — tokenize on any non-alphanumeric run (keeps `_`).
+- `matchDensity(ranges)` — matched characters ÷ inclusive span (a junk-chain discriminator).
+- `SCORES` — the tier constants.
 
 ## Types
 
 ```typescript
-type Range = [number, number]; // [start, end] inclusive indices
-type HighlightRanges = Range[];
-type FuzzyMatches = Array<HighlightRanges | null>;
+type Range = [number, number]; // [start, end] inclusive
+type Strategy = "off" | "smart" | "aggressive";
+type Tier =
+  | "exact" | "normalized-exact" | "prefix" | "boundary-exact"
+  | "boundary" | "multi-word" | "acronym" | "contains" | "fuzzy";
 
-interface FuzzyResult<T> {
+type MatchResult = { score: number; tier: Tier; ranges: Range[] };
+
+type FieldSpec<T> = {
+  text: (item: T) => string | null;
+  strategy?: Strategy;   // default "smart"
+  acronym?: boolean;     // default false
+  penalty?: number;      // added to this field's score; higher demotes it
+};
+
+type FuzzyResult<T> = {
   item: T;
-  score: number;
-  matches: FuzzyMatches;
-}
-
-interface FuzzySearchOptions {
-  key?: string;
-  getText?: (item: unknown) => Array<string | null>;
-  strategy?: "off" | "smart" | "aggressive";
-}
+  score: number;                       // min effective score across fields
+  fields: Array<MatchResult | null>;   // one per field spec
+};
 ```
 
 ## License

@@ -119,3 +119,35 @@ Applied items are marked ✅; doc-only items are marked ✍️.
 - **`start` / `end`** — the bounds of a range or chunk.
 - **`SMART_MIN_CHUNK`** — the smart strategy's minimum mid-word lookahead width (the `3` in
   `Math.min(3, …)`).
+
+## v1.0.0 vocabulary
+
+Primitive-first redesign — `fuzzyMatch` scores one string, `createFuzzySearch` composes it.
+
+- **`MatchResult`** — the primitive's return: `{ score, tier, ranges }`. Reused as the
+  per-field entry in `FuzzyResult.fields`.
+- **`tier`** / **`Tier`** — categorical match kind (`"exact"` … `"fuzzy"`), returned alongside
+  the numeric `score`. Tier names map 1:1 to `SCORES` keys, plus `"fuzzy"`.
+- **`FuzzyResult`** — `{ item, score, fields: Array<MatchResult | null> }`. The old parallel
+  `matches` + `scores` arrays are gone; one `fields` array replaces them.
+- **`FieldSpec`** (public) — one searchable field: `{ text, strategy?, acronym?, penalty? }`.
+  `text` is the extractor (`(item) => string | null`); replaces the old stringly `key`.
+- **`penalty`** — number added to a field's score; higher demotes it (lower is better).
+  Demote-only (kept ≥ 0). `penalty ⊂ rank` (rank deferred).
+- **`acronym`** — opt-in tier matching word-initials; `acronymMatch` reads initials via the
+  `wordRun` regex `/[\p{L}\p{N}_]+/u` (same word definition as `splitWords`).
+- **`SCORES`** (`src/scores.ts`) — exported tier constants; single source of truth.
+- **`CHUNK_SCORES`** (`src/fuzzy.ts`) — internal fuzzy-chunk bonuses; `BASE` equals
+  `SCORES.CONTAINS` by design, not by a shared binding.
+- **`MatchQuery`** (`src/match.ts`) — query-derived state (`query`, `normalizedQuery`,
+  `queryWords`, `fuzzyGate`) built once per query.
+- **`buildFuzzyGate`** (`src/fuzzy.ts`) — the native subsequence regex gate for the fuzzy tier.
+- **`PreparedField`** (`src/search.ts`) — internal per-item cached field: `{field,
+  normalizedField, fieldWords, strategy, acronym, penalty}`.
+- **`matchDensity`** (`src/density.ts`) — matched-chars ÷ inclusive span helper.
+- **`splitWords`** (`src/normalize.ts`, exported) — tokenizer on `/[^\p{L}\p{N}_]+/u`.
+
+**Tokenization asymmetry (documented):** `splitWords` splits on any non-alphanumeric run,
+while `isValidWordBoundary` recognizes an explicit set (spaces, brackets, dashes, quotes,
+`. , : ; /`). So `"c/c++ lang"` tokenizes for the word `Set` slightly differently than
+boundaries are detected for the boundary/acronym tiers. Pre-existing tension, not a bug.

@@ -1,70 +1,132 @@
 /**
  * The tier ladder: rank one field string against a query, trying each tier in
  * order (exact → normalized-exact → prefix → boundary-contains → multi-word →
- * contains-anywhere → fuzzy fallback) and returning the first that matches.
- * Lower score = better. The `strategy` argument only selects the fuzzy fallback.
+ * contains-anywhere → acronym → fuzzy fallback) and returning the first match as
+ * { score, tier, ranges }. Lower score = better. `strategy` selects the fuzzy
+ * fallback; `acronym` enables the (opt-in) word-initials tier.
  */
 
 import { aggressiveFuzzyMatch, smartFuzzyMatch } from "./fuzzy";
+import { SCORES } from "./scores";
 import { isValidWordBoundary } from "./shared";
-import type { FuzzySearchStrategy, HighlightRanges, Range } from "./types";
+import type { MatchResult, Range, Strategy } from "./types";
 
-const SCORES = {
-	EXACT: 0,
-	NORMALIZED_EXACT: 0.1,
-	PREFIX: 0.5,
-	BOUNDARY_EXACT: 0.9,
-	BOUNDARY: 1,
-	MULTI_WORD_BASE: 1.5,
-	MULTI_WORD_PER_WORD: 0.2,
-	CONTAINS: 2,
-} as const;
+// Query-derived state, built once per query and reused across every field.
+export type MatchQuery = {
+	query: string;
+	normalizedQuery: string;
+	queryWords: string[];
+	// Subsequence gate for the fuzzy tier (see buildFuzzyGate).
+	fuzzyGate: RegExp;
+};
 
 const sortByRangeStart = (a: Range, b: Range): number => a[0] - b[0];
+
+// Runs of word characters (matches splitWords' tokenization), used to read off
+// word-initial letters for the acronym tier.
+const wordRun = /[\p{L}\p{N}_]+/gu;
+
+// First occurrence of `needle` that starts at the beginning or after a word
+// boundary. Walks past mid-word occurrences instead of stopping at the first.
+const boundaryOccurrence = (haystack: string, needle: string): number => {
+	let idx = haystack.indexOf(needle);
+	while (idx > -1) {
+		if (idx === 0 || isValidWordBoundary(haystack[idx - 1])) return idx;
+		idx = haystack.indexOf(needle, idx + 1);
+	}
+	return -1;
+};
+
+// Match the query against the field's word-initials (e.g. "us" → "United
+// States"). Contiguous run of initials, match-sorter style. Highlights each
+// matched initial character.
+const acronymMatch = (normalizedField: string, normalizedQuery: string): MatchResult | null => {
+	if (normalizedQuery.length < 2) return null;
+	const offsets: number[] = [];
+	let initials = "";
+	for (const m of normalizedField.matchAll(wordRun)) {
+		offsets.push(m.index);
+		initials += m[0][0];
+	}
+	const hit = initials.indexOf(normalizedQuery);
+	if (hit === -1) return null;
+	return {
+		score: SCORES.ACRONYM,
+		tier: "acronym",
+		ranges: offsets.slice(hit, hit + normalizedQuery.length).map((o) => [o, o] as Range),
+	};
+};
 
 export const matchField = (
 	field: string,
 	normalizedField: string,
 	fieldWords: Set<string>,
-	query: string,
-	normalizedQuery: string,
-	queryWords: string[],
-	strategy: FuzzySearchStrategy,
-): [number, HighlightRanges] | null => {
-	if (field === query) return [SCORES.EXACT, [[0, field.length - 1]]];
+	q: MatchQuery,
+	strategy: Strategy,
+	acronym: boolean,
+): MatchResult | null => {
+	const { query, normalizedQuery, queryWords } = q;
+
+	if (field === query) return { score: SCORES.EXACT, tier: "exact", ranges: [[0, field.length - 1]] };
 
 	const queryLen = query.length;
 	const normalizedFieldLen = normalizedField.length;
 	const normalizedQueryLen = normalizedQuery.length;
 
-	if (normalizedField === normalizedQuery) return [SCORES.NORMALIZED_EXACT, [[0, normalizedFieldLen - 1]]];
-	if (normalizedField.startsWith(normalizedQuery)) return [SCORES.PREFIX, [[0, normalizedQueryLen - 1]]];
+	if (normalizedField === normalizedQuery)
+		return { score: SCORES.NORMALIZED_EXACT, tier: "normalized-exact", ranges: [[0, normalizedFieldLen - 1]] };
+	if (normalizedField.startsWith(normalizedQuery))
+		return { score: SCORES.PREFIX, tier: "prefix", ranges: [[0, normalizedQueryLen - 1]] };
 
-	const exactContainsIdx = field.indexOf(query);
-	if (exactContainsIdx > -1 && isValidWordBoundary(field[exactContainsIdx - 1])) {
-		return [SCORES.BOUNDARY_EXACT, [[exactContainsIdx, exactContainsIdx + queryLen - 1]]];
+	const exactBoundaryIdx = boundaryOccurrence(field, query);
+	if (exactBoundaryIdx > -1) {
+		return {
+			score: SCORES.BOUNDARY_EXACT,
+			tier: "boundary-exact",
+			ranges: [[exactBoundaryIdx, exactBoundaryIdx + queryLen - 1]],
+		};
 	}
 
-	const containsIdx = normalizedField.indexOf(normalizedQuery);
-	if (containsIdx > -1 && isValidWordBoundary(normalizedField[containsIdx - 1])) {
-		return [SCORES.BOUNDARY, [[containsIdx, containsIdx + queryLen - 1]]];
+	const boundaryIdx = boundaryOccurrence(normalizedField, normalizedQuery);
+	if (boundaryIdx > -1) {
+		return {
+			score: SCORES.BOUNDARY,
+			tier: "boundary",
+			ranges: [[boundaryIdx, boundaryIdx + normalizedQueryLen - 1]],
+		};
 	}
 
 	if (queryWords.length > 1 && queryWords.every((w) => fieldWords.has(w))) {
-		return [
-			SCORES.MULTI_WORD_BASE + queryWords.length * SCORES.MULTI_WORD_PER_WORD,
-			queryWords
+		return {
+			score: SCORES.MULTI_WORD,
+			tier: "multi-word",
+			ranges: queryWords
 				.map((w) => {
-					const i = normalizedField.indexOf(w);
+					const i = boundaryOccurrence(normalizedField, w);
 					return [i, i + w.length - 1] as Range;
 				})
 				.sort(sortByRangeStart),
-		];
+		};
 	}
 
-	if (containsIdx > -1) return [SCORES.CONTAINS, [[containsIdx, containsIdx + queryLen - 1]]];
+	const containsIdx = normalizedField.indexOf(normalizedQuery);
+	if (containsIdx > -1)
+		return {
+			score: SCORES.CONTAINS,
+			tier: "contains",
+			ranges: [[containsIdx, containsIdx + normalizedQueryLen - 1]],
+		};
 
-	if (strategy === "aggressive") return aggressiveFuzzyMatch(normalizedField, normalizedQuery);
-	if (strategy === "smart") return smartFuzzyMatch(normalizedField, normalizedQuery);
-	return null;
+	if (acronym) {
+		const result = acronymMatch(normalizedField, normalizedQuery);
+		if (result) return result;
+	}
+
+	// Fuzzy fallback — gate on the native subsequence test before the loop.
+	if (strategy === "off") return null;
+	if (!q.fuzzyGate.test(normalizedField)) return null;
+	const fuzzy = strategy === "aggressive"
+		? aggressiveFuzzyMatch(normalizedField, normalizedQuery)
+		: smartFuzzyMatch(normalizedField, normalizedQuery);
+	return fuzzy && { score: fuzzy[0], tier: "fuzzy", ranges: fuzzy[1] };
 };

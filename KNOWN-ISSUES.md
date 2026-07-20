@@ -2,15 +2,13 @@
 
 Found while integrating mikrofuzz into a blog search (short curated fields
 searched fuzzily, a multi-KB body-vocabulary field searched contains-only).
-Every bug below has an executable repro in `test/known-issues.test.ts`:
-current behaviour is pinned by passing tests, desired behaviour by `it.fails`
-tests that will flip to "unexpected pass" the moment a fix lands.
 
-Since mikrofuzz is adapted from [@nozbe/microfuzz](https://github.com/Nozbe/microfuzz),
-these are probably inherited — worth checking upstream before changelogging
-them as mikrofuzz regressions.
+> **Status (v1.0.0):** all six bugs below are **fixed**, and feature requests
+> #1–#5 are **addressed** (see the CHANGELOG). The bug repros in
+> `test/known-issues.test.ts` are now passing regression tests. Descriptions and
+> suggested fixes are kept below for history.
 
-## Bugs
+## Bugs (fixed in v0.2.0)
 
 ### 1. Punctuation is not a word boundary
 
@@ -124,6 +122,10 @@ collection order (`Array.prototype.sort` is stable), so callers can encode a
 meaningful default order — e.g. newest-first — in the collection itself.
 
 ## Feature requests
+
+> **v1.0.0:** #1 (per-field `fields` + `penalty`), #2 (per-field scores via
+> `fields[].score`), #3 (typed `getText`), #4 (exported `SCORES`), and #5
+> (`matchDensity`) are all shipped. Originals kept below for reference.
 
 1. **Per-field strategy and weight.** The blog integration wanted "fuzzy on
    title/excerpt/topic, contains-only on body vocabulary, body never

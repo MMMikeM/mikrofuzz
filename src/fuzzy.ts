@@ -8,32 +8,46 @@
 import { isValidWordBoundary } from "./shared";
 import type { HighlightRanges, Range } from "./types";
 
+const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * A cheap native gate for the fuzzy tier: the query's characters, in order, with
+ * anything between. Both fuzzy strategies require the query to be a subsequence
+ * of the field, so a field that fails this test can never match — skip the
+ * expensive hand-rolled matcher. Built once per query, tested per field.
+ */
+export const buildFuzzyGate = (normalizedQuery: string): RegExp =>
+	new RegExp([...normalizedQuery].map(escapeRegex).join("[^]*"));
+
 // A consecutive run of matched characters. Same shape as a highlight Range,
 // named distinctly because it means "matched run", not "span to highlight".
 type Chunk = Range;
 
-const SCORES = {
+// Chunk-scoring constants. BASE equals SCORES.CONTAINS (2) by design — a fuzzy
+// match must never beat a true contains — but the two are intentionally NOT the
+// same binding, since they mean different things and could diverge.
+const CHUNK_SCORES = {
 	BASE: 2,
-	CHUNK_WHOLE_WORD: 0.2,
-	CHUNK_WORD_START: 0.4,
-	CHUNK_LONG: 0.8,
-	CHUNK_SCATTERED: 1.6,
+	WHOLE_WORD: 0.2,
+	WORD_START: 0.4,
+	LONG: 0.8,
+	SCATTERED: 1.6,
 } as const;
 
 const scoreConsecutiveLetters = (
 	chunks: Chunk[],
 	normalizedField: string,
 ): [number, HighlightRanges] => {
-	let score = SCORES.BASE;
+	let score = CHUNK_SCORES.BASE;
 	for (const [start, end] of chunks) {
 		const chunkLen = end - start + 1;
 		const isStartOfWord = start === 0 || normalizedField[start - 1] === " ";
 		const isEndOfWord =
 			end === normalizedField.length - 1 || normalizedField[end + 1] === " ";
-		if (isStartOfWord && isEndOfWord) score += SCORES.CHUNK_WHOLE_WORD;
-		else if (isStartOfWord) score += SCORES.CHUNK_WORD_START;
-		else if (chunkLen >= 3) score += SCORES.CHUNK_LONG;
-		else score += SCORES.CHUNK_SCATTERED;
+		if (isStartOfWord && isEndOfWord) score += CHUNK_SCORES.WHOLE_WORD;
+		else if (isStartOfWord) score += CHUNK_SCORES.WORD_START;
+		else if (chunkLen >= 3) score += CHUNK_SCORES.LONG;
+		else score += CHUNK_SCORES.SCATTERED;
 	}
 	return [score, chunks];
 };

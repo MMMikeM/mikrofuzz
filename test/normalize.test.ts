@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeText } from "../src/index";
+import { normalizeText, splitWords } from "../src/index";
 
 const cases: Array<[string, string]> = [
 	["HELLO", "hello"],
@@ -34,5 +34,18 @@ describe("normalizeText", () => {
 			const once = normalizeText(input);
 			expect(normalizeText(once)).toBe(once);
 		}
+	});
+});
+
+describe("splitWords", () => {
+	it.each([
+		["hello world", ["hello", "world"]],
+		["build, not the runtime", ["build", "not", "the", "runtime"]],
+		["a.b,c:d;e/f", ["a", "b", "c", "d", "e", "f"]],
+		["foo_bar", ["foo_bar"]], // underscore is kept (snake_case stays whole)
+		["", []],
+		["   ", []],
+	] as const)("splits %j into %j", (input, expected) => {
+		expect(splitWords(input)).toEqual(expected);
 	});
 });
