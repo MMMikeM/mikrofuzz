@@ -8,7 +8,8 @@
 		"esModuleInterop": true,
 		"skipLibCheck": true,
 		"declaration": true,
-		"declarationMap": true,
+		"declarationMap": false,
+		"isolatedDeclarations": true,
 		"outDir": "dist"
 	},
 	"include": ["src/**/*.ts", "test/**/*.ts"],

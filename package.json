@@ -1,28 +1,33 @@
 {
   "name": "@mmmike/mikrofuzz",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Zero-dependency fuzzy search library with smart word-boundary matching",
   "type": "module",
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./dist/index.d.mts",
       "import": "./dist/index.mjs"
     }
   },
   "main": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
+  "types": "./dist/index.d.mts",
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "unbuild",
+    "build": "tsdown",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt src test",
     "lint:types": "tsc --noEmit",
     "test": "vitest run",
-    "prepublishOnly": "npm run build"
+    "bench": "pnpm build && pnpm --filter=@mmmike/mikrofuzz-bench bench",
+    "prepublishOnly": "pnpm lint:types && pnpm test && pnpm build"
   },
   "keywords": [
     "fuzzy-search",
@@ -44,8 +49,8 @@
   "devDependencies": {
     "oxfmt": "^0.59.0",
     "oxlint": "^1.74.0",
-    "typescript": "^5.7.0",
-    "unbuild": "^3.6.0",
+    "tsdown": "^0.22.12",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
 }
