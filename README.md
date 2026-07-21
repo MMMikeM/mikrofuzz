@@ -104,15 +104,16 @@ Per query, over lists of short strings:
 
 | library | 2k items | vs mikrofuzz | 10k items | vs mikrofuzz |
 |---------|----------|--------------|-----------|--------------|
-| uFuzzy | 0.04 ms | +277% | 0.22 ms | +273% |
-| **mikrofuzz** | **0.16 ms** | **—** | **0.83 ms** | **—** |
-| match-sorter | 0.44 ms | −63% | 2.16 ms | −62% |
-| Fuse.js | 2.29 ms | −93% | 11.6 ms | −93% |
+| uFuzzy | 0.04 ms | 25% | 0.22 ms | 27% |
+| **mikrofuzz** | **0.16 ms** | **100%** | **0.83 ms** | **100%** |
+| match-sorter | 0.44 ms | 275% | 2.16 ms | 260% |
+| Fuse.js | 2.29 ms | 1430% | 11.6 ms | 1400% |
 
-`vs mikrofuzz` is throughput relative to mikrofuzz (positive = faster). Fuse.js
-trails because it does typo-tolerant matching the others don't — reach for it if
-you need that. For 100k+ corpora prefer uFuzzy or fuzzysort. Preprocessing is
-cached in `createFuzzySearch` (build once, query many).
+`vs mikrofuzz` is query time relative to mikrofuzz (100% = same; lower = faster,
+higher = slower — so Fuse.js is ~14× slower). Fuse trails because it does
+typo-tolerant matching the others don't — reach for it if you need that. For
+100k+ corpora prefer uFuzzy or fuzzysort. Preprocessing is cached in
+`createFuzzySearch` (build once, query many).
 
 ## Building blocks
 
