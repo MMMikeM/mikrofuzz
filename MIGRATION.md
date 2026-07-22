@@ -3,6 +3,20 @@
 v1.0 is a primitive-first redesign — a smaller API and new result shapes. Here's
 everything that breaks. `normalizeText` is unchanged.
 
+## Renamed: `@mmmike/mikrofuzz` → `krino`
+
+Same 1.0 API, unscoped package. Update the dependency and the import:
+
+```diff
+- pnpm add @mmmike/mikrofuzz
++ pnpm add krino
+
+- import { fuzzyMatch } from "@mmmike/mikrofuzz";
++ import { fuzzyMatch } from "krino";
+```
+
+The 0.x to 1.0 changes below are unchanged.
+
 ## `fuzzyMatch` result
 
 Returns `{ score, tier, ranges }` (or `null`) — no `item`/`matches`/`scores`
