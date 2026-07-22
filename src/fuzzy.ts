@@ -22,6 +22,26 @@ export const buildFuzzyGate = (normalizedQuery: string): RegExp =>
 const WORD_CHAR = /[\p{L}\p{N}_]/u;
 
 /**
+ * A 32-bit character-class mask (fuzzysort-style O(1) pre-gate): bits 0–25 for
+ * a–z, bits 26–29 for digits (bucketed), bits 30–31 for non-ASCII (bucketed).
+ * Spaces and ASCII punctuation are skipped — separators must not be required of
+ * the field. Query and field use the same function, so a bucket collision can
+ * only cause a false pass (weaker filter), never a false reject. If
+ * `(queryMask & fieldMask) !== queryMask`, some query character class is absent
+ * from the field and no tier can match.
+ */
+export const charMask = (normalized: string): number => {
+	let mask = 0;
+	for (let i = 0; i < normalized.length; i++) {
+		const c = normalized.charCodeAt(i);
+		if (c >= 97 && c <= 122) mask |= 1 << (c - 97);
+		else if (c >= 48 && c <= 57) mask |= 1 << (26 + (c & 3));
+		else if (c > 127) mask |= 1 << (30 + (c & 1));
+	}
+	return mask;
+};
+
+/**
  * An order-independent presence gate: every distinct word-character of the query
  * must appear somewhere in the field (uFuzzy-style native pre-filter). A necessary
  * condition for *every* tier — exact / prefix / boundary / multi-word / contains /

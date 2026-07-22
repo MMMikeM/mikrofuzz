@@ -16,6 +16,11 @@ export type MatchQuery = {
 	query: string;
 	normalizedQuery: string;
 	queryWords: string[];
+	// O(1) char-class mask pre-gate, valid for every tier (see charMask).
+	queryMask: number;
+	// When the query is pure a–z, the mask IS an exact distinct-char presence
+	// check, so the presence regex can't reject anything further — skip it.
+	presenceGateRedundant: boolean;
 	// Order-independent char-presence pre-filter, valid for every tier (see
 	// buildPresenceGate). Rejects non-candidates before the ladder runs.
 	presenceGate: RegExp;
@@ -64,19 +69,26 @@ export const matchField = (
 	field: string,
 	normalizedField: string,
 	fieldWords: Set<string>,
+	fieldMask: number,
 	q: MatchQuery,
 	strategy: Strategy,
 	acronym: boolean,
 ): MatchResult | null => {
 	const { query, normalizedQuery, queryWords } = q;
 
-	// Bulk-reject non-candidates before the tier ladder. Single-word queries use
-	// the stricter, single-pass subsequence gate (every tier needs the query's
-	// chars in order when there's one word); multi-word queries must use the
-	// order-independent presence gate, since the multi-word tier matches words
-	// out of order and a subsequence gate would wrongly reject them.
-	const frontGate = queryWords.length > 1 ? q.presenceGate : q.fuzzyGate;
-	if (!frontGate.test(normalizedField)) return null;
+	// One integer AND before any regex: a field missing one of the query's
+	// character classes can't match at any tier.
+	if ((q.queryMask & fieldMask) !== q.queryMask) return null;
+
+	// Bulk-reject remaining non-candidates before the tier ladder. Single-word
+	// queries use the stricter, single-pass subsequence gate (every tier needs
+	// the query's chars in order when there's one word); multi-word queries must
+	// use the order-independent presence gate, since the multi-word tier matches
+	// words out of order and a subsequence gate would wrongly reject them — but
+	// when the mask already proved exact char presence, the regex is skipped.
+	const frontGate =
+		queryWords.length > 1 ? (q.presenceGateRedundant ? null : q.presenceGate) : q.fuzzyGate;
+	if (frontGate && !frontGate.test(normalizedField)) return null;
 
 	if (field === query) return { score: SCORES.EXACT, tier: "exact", ranges: [[0, field.length - 1]] };
 

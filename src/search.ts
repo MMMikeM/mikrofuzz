@@ -5,7 +5,7 @@
  *   built on the primitive. Second arg is a `getText` fn or an array of field specs.
  */
 
-import { buildFuzzyGate, buildPresenceGate } from "./fuzzy";
+import { buildFuzzyGate, buildPresenceGate, charMask } from "./fuzzy";
 import { matchField, type MatchQuery } from "./match";
 import { normalizeText, splitWords } from "./normalize";
 import type {
@@ -22,13 +22,20 @@ const { MAX_SAFE_INTEGER } = Number;
 const sortByScore = <T>(a: FuzzyResult<T>, b: FuzzyResult<T>): number => a.score - b.score;
 
 // Build the query-derived state once, reused across every field.
-const prepareQuery = (query: string, normalizedQuery: string): MatchQuery => ({
-	query,
-	normalizedQuery,
-	queryWords: splitWords(normalizedQuery),
-	presenceGate: buildPresenceGate(normalizedQuery),
-	fuzzyGate: buildFuzzyGate(normalizedQuery),
-});
+const prepareQuery = (query: string, normalizedQuery: string): MatchQuery => {
+	const queryMask = charMask(normalizedQuery);
+	return {
+		query,
+		normalizedQuery,
+		queryWords: splitWords(normalizedQuery),
+		queryMask,
+		// No digit/non-ASCII bucket bits (26+) means the mask is an exact
+		// distinct-char check, making the presence regex redundant.
+		presenceGateRedundant: (queryMask & ~0x3ffffff) === 0,
+		presenceGate: buildPresenceGate(normalizedQuery),
+		fuzzyGate: buildFuzzyGate(normalizedQuery),
+	};
+};
 
 /**
  * Score one string against a query. Returns { score, tier, ranges } or null.
@@ -46,7 +53,7 @@ export const fuzzyMatch = (
 	const normalizedField = normalizeText(text);
 	const fieldWords = new Set(splitWords(normalizedField));
 
-	return matchField(text, normalizedField, fieldWords, q, strategy, acronym);
+	return matchField(text, normalizedField, fieldWords, charMask(normalizedField), q, strategy, acronym);
 };
 
 // A preprocessed field: its cached normalized form plus its matching config.
@@ -54,6 +61,7 @@ type PreparedField = {
 	field: string;
 	normalizedField: string;
 	fieldWords: Set<string>;
+	mask: number;
 	strategy: Strategy;
 	acronym: boolean;
 	penalty: number;
@@ -71,6 +79,7 @@ const prepareField = (
 		field,
 		normalizedField,
 		fieldWords: new Set(splitWords(normalizedField)),
+		mask: charMask(normalizedField),
 		strategy,
 		acronym,
 		penalty,
@@ -131,7 +140,7 @@ export function createFuzzySearch<T>(
 			const fields: Array<MatchResult | null> = [];
 
 			for (const p of prepared) {
-				const result = matchField(p.field, p.normalizedField, p.fieldWords, q, p.strategy, p.acronym);
+				const result = matchField(p.field, p.normalizedField, p.fieldWords, p.mask, q, p.strategy, p.acronym);
 				if (result) {
 					const effective = { ...result, score: result.score + p.penalty };
 					bestScore = Math.min(bestScore, effective.score);
