@@ -1,0 +1,230 @@
+{
+  "method": {
+    "size": "esbuild --bundle --minify (tree-shaken to primary API) | gzip",
+    "speed": "vitest bench, per-query mean over workloads; perf = time relative to krino (100%), lower is faster",
+    "workloads": [
+      1000,
+      10000,
+      100000
+    ],
+    "queriesPerIter": 6
+  },
+  "libraries": [
+    {
+      "name": "@nozbe/microfuzz",
+      "gzipKB": 1.7,
+      "deps": 0,
+      "type": "subsequence",
+      "module": "cjs",
+      "updated": "2023-07-18",
+      "features": {
+        "ranges": "yes",
+        "tier": "no",
+        "diacritics": "yes",
+        "multiWord": "yes",
+        "perField": "yes",
+        "typos": "no"
+      },
+      "perQueryMs": {
+        "1000": 0.08825670399764879,
+        "10000": 0.9307418333333227,
+        "100000": 14.330187466666636
+      },
+      "relToKrino": {
+        "1000": 1.209022343551341,
+        "10000": 1.2889051672782286,
+        "100000": 1.6022460917918977
+      },
+      "meanRelPct": 137
+    },
+    {
+      "name": "krino",
+      "gzipKB": 1.9,
+      "deps": 0,
+      "type": "subsequence (tiered)",
+      "module": "esm",
+      "updated": null,
+      "features": {
+        "ranges": "yes",
+        "tier": "yes",
+        "diacritics": "yes",
+        "multiWord": "yes",
+        "perField": "yes",
+        "typos": "no"
+      },
+      "perQueryMs": {
+        "1000": 0.07299840608272512,
+        "10000": 0.7221181642857118,
+        "100000": 8.943811777777682
+      },
+      "relToKrino": {
+        "1000": 1,
+        "10000": 1,
+        "100000": 1
+      },
+      "meanRelPct": 100
+    },
+    {
+      "name": "match-sorter",
+      "gzipKB": 3.4,
+      "deps": 2,
+      "type": "subsequence (tiered)",
+      "module": "dual",
+      "updated": "2026-04-15",
+      "features": {
+        "ranges": "no",
+        "tier": "yes",
+        "diacritics": "yes",
+        "multiWord": "no",
+        "perField": "yes",
+        "typos": "no"
+      },
+      "perQueryMs": {
+        "1000": 0.24715794909687952,
+        "10000": 2.599795900000019,
+        "100000": 29.427288233333396
+      },
+      "relToKrino": {
+        "1000": 3.3857992572713007,
+        "10000": 3.6002361228118738,
+        "100000": 3.2902401084121826
+      },
+      "meanRelPct": 343
+    },
+    {
+      "name": "fuzzysort",
+      "gzipKB": 3.7,
+      "deps": 0,
+      "type": "subsequence",
+      "module": "cjs",
+      "updated": "2024-10-14",
+      "features": {
+        "ranges": "yes",
+        "tier": "no",
+        "diacritics": "yes",
+        "multiWord": "yes",
+        "perField": "yes",
+        "typos": "no"
+      },
+      "perQueryMs": {
+        "1000": 0.01353041265331899,
+        "10000": 0.27685840331491524,
+        "100000": 6.669800604166653
+      },
+      "relToKrino": {
+        "1000": 0.1853521656073656,
+        "10000": 0.3833976446067821,
+        "100000": 0.7457447417150291
+      },
+      "meanRelPct": 44
+    },
+    {
+      "name": "uFuzzy",
+      "gzipKB": 4.1,
+      "deps": 0,
+      "type": "subsequence",
+      "module": "dual",
+      "updated": "2025-08-22",
+      "features": {
+        "ranges": "yes",
+        "tier": "no",
+        "diacritics": "opt-in",
+        "multiWord": "opt-in",
+        "perField": "no",
+        "typos": "opt-in"
+      },
+      "perQueryMs": {
+        "1000": 0.01528436338630883,
+        "10000": 0.21893062518195328,
+        "100000": 2.4539298095238222
+      },
+      "relToKrino": {
+        "1000": 0.20937941259961063,
+        "10000": 0.30317839380000916,
+        "100000": 0.2743718081837321
+      },
+      "meanRelPct": 26
+    },
+    {
+      "name": "fuse.js",
+      "gzipKB": 9.3,
+      "deps": 0,
+      "type": "typo-tolerant",
+      "module": "dual",
+      "updated": "2026-07-13",
+      "features": {
+        "ranges": "opt-in",
+        "tier": "no",
+        "diacritics": "opt-in",
+        "multiWord": "opt-in",
+        "perField": "yes",
+        "typos": "yes"
+      },
+      "perQueryMs": {
+        "1000": 1.400826986111097,
+        "10000": 14.363610633333337,
+        "100000": 146.52301743333337
+      },
+      "relToKrino": {
+        "1000": 19.189829768661195,
+        "10000": 19.890942152855555,
+        "100000": 16.3826141553418
+      },
+      "meanRelPct": 1849
+    },
+    {
+      "name": "fast-fuzzy",
+      "gzipKB": 11,
+      "deps": 1,
+      "type": "typo-tolerant",
+      "module": "dual",
+      "updated": "2022-11-05",
+      "features": {
+        "ranges": "partial",
+        "tier": "no",
+        "diacritics": "no",
+        "multiWord": "no",
+        "perField": "yes",
+        "typos": "yes"
+      },
+      "perQueryMs": {
+        "1000": 0.7279019903381675,
+        "10000": 7.89234045238096,
+        "100000": 84.31380326666671
+      },
+      "relToKrino": {
+        "1000": 9.971477863684802,
+        "10000": 10.9294307257701,
+        "100000": 9.427054745959403
+      },
+      "meanRelPct": 1011
+    },
+    {
+      "name": "fuzzy",
+      "gzipKB": 0.8,
+      "deps": 0,
+      "type": "substring",
+      "module": "cjs",
+      "updated": "2016-10-01",
+      "features": {
+        "ranges": "partial",
+        "tier": "no",
+        "diacritics": "no",
+        "multiWord": "no",
+        "perField": "no",
+        "typos": "no"
+      },
+      "perQueryMs": {
+        "1000": 0.16546702420241877,
+        "10000": 1.7758322758620764,
+        "100000": 20.390599800000018
+      },
+      "relToKrino": {
+        "1000": 2.2667210570995753,
+        "10000": 2.459199011589264,
+        "100000": 2.2798556484231582
+      },
+      "meanRelPct": 234
+    }
+  ]
+}
