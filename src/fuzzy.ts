@@ -19,6 +19,29 @@ const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$
 export const buildFuzzyGate = (normalizedQuery: string): RegExp =>
 	new RegExp([...normalizedQuery].map(escapeRegex).join("[^]*"));
 
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
+
+/**
+ * An order-independent presence gate: every distinct word-character of the query
+ * must appear somewhere in the field (uFuzzy-style native pre-filter). A necessary
+ * condition for *every* tier — exact / prefix / boundary / multi-word / contains /
+ * acronym / fuzzy all require the query's letters to be present — so a field that
+ * fails it can't match at any tier and can skip the whole ladder. Unlike the
+ * subsequence `fuzzyGate` it stays valid for out-of-order multi-word matches, and
+ * word separators are excluded so `"foo bar"` still gates a field that separates
+ * the words differently (`"bar/foo"`). Built once per query, tested per field.
+ */
+export const buildPresenceGate = (normalizedQuery: string): RegExp => {
+	const seen = new Set<string>();
+	let src = "^";
+	for (const ch of normalizedQuery) {
+		if (seen.has(ch) || !WORD_CHAR.test(ch)) continue;
+		seen.add(ch);
+		src += `(?=[^]*${escapeRegex(ch)})`;
+	}
+	return new RegExp(src);
+};
+
 // A consecutive run of matched characters. Same shape as a highlight Range,
 // named distinctly because it means "matched run", not "span to highlight".
 type Chunk = Range;

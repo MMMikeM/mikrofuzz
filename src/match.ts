@@ -16,6 +16,9 @@ export type MatchQuery = {
 	query: string;
 	normalizedQuery: string;
 	queryWords: string[];
+	// Order-independent char-presence pre-filter, valid for every tier (see
+	// buildPresenceGate). Rejects non-candidates before the ladder runs.
+	presenceGate: RegExp;
 	// Subsequence gate for the fuzzy tier (see buildFuzzyGate).
 	fuzzyGate: RegExp;
 };
@@ -66,6 +69,14 @@ export const matchField = (
 	acronym: boolean,
 ): MatchResult | null => {
 	const { query, normalizedQuery, queryWords } = q;
+
+	// Bulk-reject non-candidates before the tier ladder. Single-word queries use
+	// the stricter, single-pass subsequence gate (every tier needs the query's
+	// chars in order when there's one word); multi-word queries must use the
+	// order-independent presence gate, since the multi-word tier matches words
+	// out of order and a subsequence gate would wrongly reject them.
+	const frontGate = queryWords.length > 1 ? q.presenceGate : q.fuzzyGate;
+	if (!frontGate.test(normalizedField)) return null;
 
 	if (field === query) return { score: SCORES.EXACT, tier: "exact", ranges: [[0, field.length - 1]] };
 

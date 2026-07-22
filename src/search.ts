@@ -5,7 +5,7 @@
  *   built on the primitive. Second arg is a `getText` fn or an array of field specs.
  */
 
-import { buildFuzzyGate } from "./fuzzy";
+import { buildFuzzyGate, buildPresenceGate } from "./fuzzy";
 import { matchField, type MatchQuery } from "./match";
 import { normalizeText, splitWords } from "./normalize";
 import type {
@@ -26,6 +26,7 @@ const prepareQuery = (query: string, normalizedQuery: string): MatchQuery => ({
 	query,
 	normalizedQuery,
 	queryWords: splitWords(normalizedQuery),
+	presenceGate: buildPresenceGate(normalizedQuery),
 	fuzzyGate: buildFuzzyGate(normalizedQuery),
 });
 
