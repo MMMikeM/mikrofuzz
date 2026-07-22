@@ -8,7 +8,7 @@ export default defineConfig({
 	dts: true,
 	clean: true,
 	sourcemap: false,
-	// Strip comments/JSDoc from the shipped bundle (kept in source) to stay tiny,
-	// without mangling or compressing (readable dist).
-	minify: { compress: false, mangle: false },
+	// Fully minify the shipped bundle (source stays readable) so the published
+	// artifact matches the ~1.9 kB the README claims.
+	minify: true,
 });
