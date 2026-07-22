@@ -1,5 +1,9 @@
 # Changelog
 
+## Renamed to `krino`
+
+`@mmmike/mikrofuzz` is now **`krino`** (unscoped), same 1.0 API. The old package is deprecated in favour of `krino`; update the import from `@mmmike/mikrofuzz` to `krino`.
+
 ## 1.0.0
 
 A primitive-first redesign. The library is now a rich single-string matcher
@@ -45,6 +49,11 @@ See [MIGRATION.md](./MIGRATION.md) for a 0.x → 1.0 upgrade guide.
 
 - Native regex subsequence gate on the fuzzy tier (`buildFuzzyGate`): ~2× faster
   query throughput on fuzzy-heavy workloads, behavior-identical.
+- Front-of-ladder pre-filter that bulk-rejects non-candidate fields before any tier
+  runs, picked per query type: single-word queries gate on the subsequence
+  `buildFuzzyGate` (stricter, single pass); multi-word queries on the
+  order-independent `buildPresenceGate` (safe for out-of-order matches). ~2.2×
+  faster query throughput at 100k items and ~25% at 1k/10k, behavior-identical.
 
 ## 0.1.0
 
