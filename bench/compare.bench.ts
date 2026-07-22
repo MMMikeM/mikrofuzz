@@ -8,14 +8,17 @@
  *   Fuse prebuild an index once (setup).
  * - fuzzy (mattyork) is a plain substring highlighter (no tiers/typos), included
  *   as the tiny-but-limited floor.
- * - CORPUS: real-ish names from faker (product / company / person / place),
- *   seeded for reproducibility. Natural-language names share far fewer prefixes
- *   than a combinatorial word-grid, so they don't flatter trie-based libs
- *   (fast-fuzzy). Corpus shape still moves the numbers — don't read them as
- *   universal.
+ * - CORPORA: two seeded faker corpora (see corpus.ts) — `ascii` (en only) and
+ *   `mixed` (~5% diacritics), benched separately so diacritic cost is visible.
+ *   Natural-language names share far fewer prefixes than a combinatorial
+ *   word-grid, so they don't flatter trie-based libs (fast-fuzzy). Corpus shape
+ *   still moves the numbers — don't read them as universal.
+ * - Each lib with optional features gets a second "(all opts)" line: every
+ *   opt-in switched on (diacritic folding, multi-word, ranges/highlight
+ *   output) EXCEPT typo modes — krino can't reciprocate, so typo tolerance
+ *   stays off everywhere. Base lines are stock defaults.
  * The point is positioning, not a leaderboard. Run: `pnpm bench`.
  */
-import { faker } from "@faker-js/faker";
 import uFuzzy from "@leeoniya/ufuzzy";
 import createMicrofuzz from "@nozbe/microfuzz";
 import { Searcher } from "fast-fuzzy";
@@ -25,44 +28,17 @@ import fuzzysort from "fuzzysort";
 import { matchSorter } from "match-sorter";
 import { bench, describe } from "vitest";
 import { createFuzzySearch } from "krino";
-
-const GENERATORS: Array<() => string> = [
-	() => faker.commerce.productName(),
-	() => faker.company.name(),
-	() => faker.person.fullName(),
-	() => `${faker.location.city()}, ${faker.location.country()}`,
-];
-
-// Reseed before every build so corpora are nested (1k ⊂ 10k ⊂ 100k) and the
-// queries below (derived from a 2k sample) hit at every size.
-const build = (n: number): string[] => {
-	faker.seed(20240607);
-	const out: string[] = [];
-	for (let i = 0; i < n; i++) out.push(GENERATORS[i % GENERATORS.length]());
-	return out;
-};
-
-const wordsOf = (s: string): string[] => s.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-const everyOther = (w: string): string => [...w].filter((_, k) => k % 2 === 0).join("");
-
-// Queries derived from a fixed sample so they actually match: a real word, a
-// second word, a two-word phrase, a raw prefix, a scattered subsequence (fuzzy
-// tier), and one guaranteed miss (reject path).
-const sample = build(2000);
-const word = (i: number): string => wordsOf(sample[i])[0] ?? "steel";
-const QUERIES: string[] = [
-	word(4).toLowerCase(),
-	word(517).toLowerCase(),
-	wordsOf(sample[8]).slice(0, 2).join(" ").toLowerCase(),
-	sample[42].slice(0, 5).toLowerCase(),
-	everyOther(word(1300)).toLowerCase(),
-	"qxzwkv",
-];
+import { CORPORA } from "./corpus";
 
 // Bound the slow libs at 100k (Fuse/match-sorter run tens of ms per query) while
 // still collecting many samples for the fast ones.
 const BENCH_OPTS = { time: 300, iterations: 5, warmupTime: 100, warmupIterations: 1 };
 
+// Every bench consumes its result into this sink so the JIT can't dead-code
+// eliminate result construction. Match-count VALIDITY lives in hits.test.ts.
+let sink = 0;
+
+for (const { name: corpusName, build, queries: QUERIES } of CORPORA)
 for (const size of [1000, 10000, 100000]) {
 	const list = build(size);
 	const mikro = createFuzzySearch(list); // prebuilt index
@@ -71,45 +47,83 @@ for (const size of [1000, 10000, 100000]) {
 	const fuse = new Fuse(list, { ignoreLocation: true, threshold: 0.4 });
 	const uf = new uFuzzy();
 
-	describe(`query ${size} items × ${QUERIES.length} queries`, () => {
+	// "(all opts)" variants — every opt-in on except typo modes. Cached prep
+	// (latinized haystack, prebuilt indexes) stays outside the query loop, same
+	// as the base lines.
+	const mikroAll = createFuzzySearch(list, [{ text: (x: string) => x, acronym: true }]);
+	const microfuzzAll = createMicrofuzz(list, { strategy: "aggressive" });
+	const fastFuzzyAll = new Searcher(list, { returnMatchData: true });
+	const fuseAll = new Fuse(list, {
+		ignoreLocation: true,
+		threshold: 0.4,
+		ignoreDiacritics: true,
+		includeMatches: true,
+		useExtendedSearch: true,
+	});
+	const latinized = uFuzzy.latinize(list);
+	const OUT_OF_ORDER = 1;
+
+	describe(`[${corpusName}] query ${size} items × ${QUERIES.length} queries`, () => {
 		bench("krino", () => {
-			for (const q of QUERIES) mikro(q);
+			for (const q of QUERIES) sink += mikro(q).length;
+		}, BENCH_OPTS);
+		bench("krino (all opts)", () => {
+			for (const q of QUERIES) sink += mikroAll(q).length;
 		}, BENCH_OPTS);
 		bench("@nozbe/microfuzz", () => {
-			for (const q of QUERIES) microfuzz(q);
+			for (const q of QUERIES) sink += microfuzz(q).length;
+		}, BENCH_OPTS);
+		bench("@nozbe/microfuzz (all opts)", () => {
+			for (const q of QUERIES) sink += microfuzzAll(q).length;
 		}, BENCH_OPTS);
 		bench("fuzzy", () => {
-			for (const q of QUERIES) fuzzyFilter(q, list);
+			for (const q of QUERIES) sink += fuzzyFilter(q, list).length;
+		}, BENCH_OPTS);
+		bench("fuzzy (all opts)", () => {
+			for (const q of QUERIES) sink += fuzzyFilter(q, list, { pre: "<", post: ">" }).length;
 		}, BENCH_OPTS);
 		bench("fuzzysort", () => {
-			for (const q of QUERIES) fuzzysort.go(q, list);
+			for (const q of QUERIES) sink += fuzzysort.go(q, list).length;
 		}, BENCH_OPTS);
 		bench("match-sorter", () => {
-			for (const q of QUERIES) matchSorter(list, q);
+			for (const q of QUERIES) sink += matchSorter(list, q).length;
 		}, BENCH_OPTS);
 		bench("fast-fuzzy", () => {
-			for (const q of QUERIES) fastFuzzy.search(q);
+			for (const q of QUERIES) sink += fastFuzzy.search(q).length;
+		}, BENCH_OPTS);
+		bench("fast-fuzzy (all opts)", () => {
+			for (const q of QUERIES) sink += fastFuzzyAll.search(q).length;
 		}, BENCH_OPTS);
 		bench("uFuzzy", () => {
-			for (const q of QUERIES) uf.search(list, q);
+			for (const q of QUERIES) sink += uf.search(list, q)[0]?.length ?? 0;
+		}, BENCH_OPTS);
+		bench("uFuzzy (all opts)", () => {
+			for (const q of QUERIES)
+				sink += uf.search(latinized, uFuzzy.latinize([q])[0], OUT_OF_ORDER)[0]?.length ?? 0;
 		}, BENCH_OPTS);
 		bench("fuse.js", () => {
-			for (const q of QUERIES) fuse.search(q);
+			for (const q of QUERIES) sink += fuse.search(q).length;
+		}, BENCH_OPTS);
+		bench("fuse.js (all opts)", () => {
+			for (const q of QUERIES) sink += fuseAll.search(q).length;
 		}, BENCH_OPTS);
 	});
 
-	describe(`build index (${size} items)`, () => {
-		bench("krino createFuzzySearch", () => {
-			createFuzzySearch(list);
-		}, BENCH_OPTS);
-		bench("@nozbe/microfuzz", () => {
-			createMicrofuzz(list);
-		}, BENCH_OPTS);
-		bench("fast-fuzzy new Searcher", () => {
-			new Searcher(list);
-		}, BENCH_OPTS);
-		bench("fuse.js new Fuse", () => {
-			new Fuse(list, { ignoreLocation: true, threshold: 0.4 });
-		}, BENCH_OPTS);
-	});
+	// Build cost barely differs between corpora — measure it once, on mixed.
+	if (corpusName === "mixed") {
+		describe(`build index (${size} items)`, () => {
+			bench("krino createFuzzySearch", () => {
+				createFuzzySearch(list);
+			}, BENCH_OPTS);
+			bench("@nozbe/microfuzz", () => {
+				createMicrofuzz(list);
+			}, BENCH_OPTS);
+			bench("fast-fuzzy new Searcher", () => {
+				new Searcher(list);
+			}, BENCH_OPTS);
+			bench("fuse.js new Fuse", () => {
+				new Fuse(list, { ignoreLocation: true, threshold: 0.4 });
+			}, BENCH_OPTS);
+		});
+	}
 }

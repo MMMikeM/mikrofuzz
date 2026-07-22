@@ -1,230 +1,968 @@
 {
   "method": {
     "size": "esbuild --bundle --minify (tree-shaken to primary API) | gzip",
-    "speed": "vitest bench, per-query mean over workloads; perf = time relative to krino (100%), lower is faster",
-    "workloads": [
-      1000,
-      10000,
-      100000
-    ],
-    "queriesPerIter": 6
-  },
-  "libraries": [
-    {
-      "name": "@nozbe/microfuzz",
-      "gzipKB": 1.7,
-      "deps": 0,
-      "type": "subsequence",
-      "module": "cjs",
-      "updated": "2023-07-18",
-      "features": {
-        "ranges": "yes",
-        "tier": "no",
-        "diacritics": "yes",
-        "multiWord": "yes",
-        "perField": "yes",
-        "typos": "no"
-      },
-      "perQueryMs": {
-        "1000": 0.08825670399764879,
-        "10000": 0.9307418333333227,
-        "100000": 14.330187466666636
-      },
-      "relToKrino": {
-        "1000": 1.209022343551341,
-        "10000": 1.2889051672782286,
-        "100000": 1.6022460917918977
-      },
-      "meanRelPct": 137
-    },
-    {
-      "name": "krino",
-      "gzipKB": 1.9,
-      "deps": 0,
-      "type": "subsequence (tiered)",
-      "module": "esm",
-      "updated": null,
-      "features": {
-        "ranges": "yes",
-        "tier": "yes",
-        "diacritics": "yes",
-        "multiWord": "yes",
-        "perField": "yes",
-        "typos": "no"
-      },
-      "perQueryMs": {
-        "1000": 0.07299840608272512,
-        "10000": 0.7221181642857118,
-        "100000": 8.943811777777682
-      },
-      "relToKrino": {
-        "1000": 1,
-        "10000": 1,
-        "100000": 1
-      },
-      "meanRelPct": 100
-    },
-    {
-      "name": "match-sorter",
-      "gzipKB": 3.4,
-      "deps": 2,
-      "type": "subsequence (tiered)",
-      "module": "dual",
-      "updated": "2026-04-15",
-      "features": {
-        "ranges": "no",
-        "tier": "yes",
-        "diacritics": "yes",
-        "multiWord": "no",
-        "perField": "yes",
-        "typos": "no"
-      },
-      "perQueryMs": {
-        "1000": 0.24715794909687952,
-        "10000": 2.599795900000019,
-        "100000": 29.427288233333396
-      },
-      "relToKrino": {
-        "1000": 3.3857992572713007,
-        "10000": 3.6002361228118738,
-        "100000": 3.2902401084121826
-      },
-      "meanRelPct": 343
-    },
-    {
-      "name": "fuzzysort",
-      "gzipKB": 3.7,
-      "deps": 0,
-      "type": "subsequence",
-      "module": "cjs",
-      "updated": "2024-10-14",
-      "features": {
-        "ranges": "yes",
-        "tier": "no",
-        "diacritics": "yes",
-        "multiWord": "yes",
-        "perField": "yes",
-        "typos": "no"
-      },
-      "perQueryMs": {
-        "1000": 0.01353041265331899,
-        "10000": 0.27685840331491524,
-        "100000": 6.669800604166653
-      },
-      "relToKrino": {
-        "1000": 0.1853521656073656,
-        "10000": 0.3833976446067821,
-        "100000": 0.7457447417150291
-      },
-      "meanRelPct": 44
-    },
-    {
-      "name": "uFuzzy",
-      "gzipKB": 4.1,
-      "deps": 0,
-      "type": "subsequence",
-      "module": "dual",
-      "updated": "2025-08-22",
-      "features": {
-        "ranges": "yes",
-        "tier": "no",
-        "diacritics": "opt-in",
-        "multiWord": "opt-in",
-        "perField": "no",
-        "typos": "opt-in"
-      },
-      "perQueryMs": {
-        "1000": 0.01528436338630883,
-        "10000": 0.21893062518195328,
-        "100000": 2.4539298095238222
-      },
-      "relToKrino": {
-        "1000": 0.20937941259961063,
-        "10000": 0.30317839380000916,
-        "100000": 0.2743718081837321
-      },
-      "meanRelPct": 26
-    },
-    {
-      "name": "fuse.js",
-      "gzipKB": 9.3,
-      "deps": 0,
-      "type": "typo-tolerant",
-      "module": "dual",
-      "updated": "2026-07-13",
-      "features": {
-        "ranges": "opt-in",
-        "tier": "no",
-        "diacritics": "opt-in",
-        "multiWord": "opt-in",
-        "perField": "yes",
-        "typos": "yes"
-      },
-      "perQueryMs": {
-        "1000": 1.400826986111097,
-        "10000": 14.363610633333337,
-        "100000": 146.52301743333337
-      },
-      "relToKrino": {
-        "1000": 19.189829768661195,
-        "10000": 19.890942152855555,
-        "100000": 16.3826141553418
-      },
-      "meanRelPct": 1849
-    },
-    {
-      "name": "fast-fuzzy",
-      "gzipKB": 11,
-      "deps": 1,
-      "type": "typo-tolerant",
-      "module": "dual",
-      "updated": "2022-11-05",
-      "features": {
-        "ranges": "partial",
-        "tier": "no",
-        "diacritics": "no",
-        "multiWord": "no",
-        "perField": "yes",
-        "typos": "yes"
-      },
-      "perQueryMs": {
-        "1000": 0.7279019903381675,
-        "10000": 7.89234045238096,
-        "100000": 84.31380326666671
-      },
-      "relToKrino": {
-        "1000": 9.971477863684802,
-        "10000": 10.9294307257701,
-        "100000": 9.427054745959403
-      },
-      "meanRelPct": 1011
-    },
-    {
-      "name": "fuzzy",
-      "gzipKB": 0.8,
-      "deps": 0,
-      "type": "substring",
-      "module": "cjs",
-      "updated": "2016-10-01",
-      "features": {
-        "ranges": "partial",
-        "tier": "no",
-        "diacritics": "no",
-        "multiWord": "no",
-        "perField": "no",
-        "typos": "no"
-      },
-      "perQueryMs": {
-        "1000": 0.16546702420241877,
-        "10000": 1.7758322758620764,
-        "100000": 20.390599800000018
-      },
-      "relToKrino": {
-        "1000": 2.2667210570995753,
-        "10000": 2.459199011589264,
-        "100000": 2.2798556484231582
-      },
-      "meanRelPct": 234
+    "speed": "vitest bench, per-query mean ± sd; perf = time relative to krino (100%), lower is faster",
+    "corpora": {
+      "ascii": "en faker locale — effectively no diacritics",
+      "mixed": "mostly en with fr/pl every 7th item — ~5% of items carry a diacritic"
     }
-  ]
+  },
+  "corpora": {
+    "ascii": [
+      {
+        "name": "@nozbe/microfuzz",
+        "valid": true,
+        "sdRelPct": 45,
+        "gzipKB": 1.7,
+        "deps": 0,
+        "type": "subsequence",
+        "module": "cjs",
+        "updated": "2023-07-18",
+        "features": {
+          "ranges": "yes",
+          "tier": "no",
+          "diacritics": "yes",
+          "multiWord": "yes",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.11612068865741038,
+          "10000": 1.2615886419753,
+          "100000": 12.80057871111114
+        },
+        "perQuerySdMs": {
+          "1000": 0.030641167426215334,
+          "10000": 0.1306014690653686,
+          "100000": 0.2881451267603323
+        },
+        "relToKrino": {
+          "1000": 2.0225188883779865,
+          "10000": 2.0602404062358817,
+          "100000": 1.0810009547978565
+        },
+        "meanRelPct": 172
+      },
+      {
+        "name": "@nozbe/microfuzz (all opts)",
+        "valid": true,
+        "sdRelPct": 47,
+        "gzipKB": 1.7,
+        "deps": 0,
+        "type": "subsequence",
+        "module": "cjs",
+        "updated": "2023-07-18",
+        "features": {
+          "ranges": "yes",
+          "tier": "no",
+          "diacritics": "yes",
+          "multiWord": "yes",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.12005382334132647,
+          "10000": 1.143598755555582,
+          "100000": 11.878785199999887
+        },
+        "perQuerySdMs": {
+          "1000": 0.027502469942335402,
+          "10000": 0.04884423147757736,
+          "100000": 0.328632079715292
+        },
+        "relToKrino": {
+          "1000": 2.091023814422853,
+          "10000": 1.867556734679932,
+          "100000": 1.0031560629280236
+        },
+        "meanRelPct": 165
+      },
+      {
+        "name": "krino",
+        "valid": true,
+        "sdRelPct": 0,
+        "gzipKB": 2,
+        "deps": 0,
+        "type": "subsequence (tiered)",
+        "module": "esm",
+        "updated": null,
+        "features": {
+          "ranges": "yes",
+          "tier": "yes",
+          "diacritics": "yes",
+          "multiWord": "yes",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.05741389577357,
+          "10000": 0.6123502083333365,
+          "100000": 11.841412955555441
+        },
+        "perQuerySdMs": {
+          "1000": 0.025332826178332477,
+          "10000": 0.1591199824139927,
+          "100000": 0.7687222444465589
+        },
+        "relToKrino": {
+          "1000": 1,
+          "10000": 1,
+          "100000": 1
+        },
+        "meanRelPct": 100
+      },
+      {
+        "name": "krino (all opts)",
+        "valid": true,
+        "sdRelPct": 10,
+        "gzipKB": 2,
+        "deps": 0,
+        "type": "subsequence (tiered)",
+        "module": "esm",
+        "updated": null,
+        "features": {
+          "ranges": "yes",
+          "tier": "yes",
+          "diacritics": "yes",
+          "multiWord": "yes",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.056858026689381655,
+          "10000": 0.752216244444432,
+          "100000": 13.081062955555455
+        },
+        "perQuerySdMs": {
+          "1000": 0.01252438712815151,
+          "10000": 0.15011460601708623,
+          "100000": 0.23640863042017005
+        },
+        "relToKrino": {
+          "1000": 0.9903182134446931,
+          "10000": 1.2284085711210513,
+          "100000": 1.1046876757573452
+        },
+        "meanRelPct": 111
+      },
+      {
+        "name": "match-sorter",
+        "valid": true,
+        "sdRelPct": 98,
+        "gzipKB": 3.4,
+        "deps": 2,
+        "type": "subsequence (tiered)",
+        "module": "dual",
+        "updated": "2026-04-15",
+        "features": {
+          "ranges": "no",
+          "tier": "yes",
+          "diacritics": "yes",
+          "multiWord": "no",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.2642980472440851,
+          "10000": 2.6797435982906066,
+          "100000": 28.58721664444448
+        },
+        "perQuerySdMs": {
+          "1000": 0.026067069507626293,
+          "10000": 0.0561360018266736,
+          "100000": 0.8809080606369399
+        },
+        "relToKrino": {
+          "1000": 4.6033811794696655,
+          "10000": 4.376161813652674,
+          "100000": 2.4141727639886663
+        },
+        "meanRelPct": 380
+      },
+      {
+        "name": "fuzzysort",
+        "valid": true,
+        "sdRelPct": 36,
+        "gzipKB": 3.7,
+        "deps": 0,
+        "type": "subsequence",
+        "module": "cjs",
+        "updated": "2024-10-14",
+        "features": {
+          "ranges": "yes",
+          "tier": "no",
+          "diacritics": "yes",
+          "multiWord": "yes",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.01760315698697776,
+          "10000": 0.30146538438439036,
+          "100000": 13.696368511111116
+        },
+        "perQuerySdMs": {
+          "1000": 0.004441401920176072,
+          "10000": 0.03401264472610263,
+          "100000": 3.916509499167935
+        },
+        "relToKrino": {
+          "1000": 0.30660098482780934,
+          "10000": 0.49230878063208866,
+          "100000": 1.1566498493480388
+        },
+        "meanRelPct": 65
+      },
+      {
+        "name": "uFuzzy",
+        "valid": true,
+        "sdRelPct": 5,
+        "gzipKB": 4.1,
+        "deps": 0,
+        "type": "subsequence",
+        "module": "dual",
+        "updated": "2025-08-22",
+        "features": {
+          "ranges": "yes",
+          "tier": "no",
+          "diacritics": "opt-in",
+          "multiWord": "opt-in",
+          "perField": "no",
+          "typos": "opt-in"
+        },
+        "perQueryMs": {
+          "1000": 0.01729939600991893,
+          "10000": 0.22199007064016962,
+          "100000": 2.8215914351852986
+        },
+        "perQuerySdMs": {
+          "1000": 0.00943019498261784,
+          "10000": 0.009801348316917242,
+          "100000": 0.22905176873368996
+        },
+        "relToKrino": {
+          "1000": 0.30131026255637855,
+          "10000": 0.36252142584285363,
+          "100000": 0.23828165150355127
+        },
+        "meanRelPct": 30
+      },
+      {
+        "name": "uFuzzy (all opts)",
+        "valid": true,
+        "sdRelPct": 5,
+        "gzipKB": 4.1,
+        "deps": 0,
+        "type": "subsequence",
+        "module": "dual",
+        "updated": "2025-08-22",
+        "features": {
+          "ranges": "yes",
+          "tier": "no",
+          "diacritics": "opt-in",
+          "multiWord": "opt-in",
+          "perField": "no",
+          "typos": "opt-in"
+        },
+        "perQueryMs": {
+          "1000": 0.017282032429004363,
+          "10000": 0.22136047240617684,
+          "100000": 2.721212965811893
+        },
+        "perQuerySdMs": {
+          "1000": 0.003732692292374413,
+          "10000": 0.006909531447255671,
+          "100000": 0.2846278641735638
+        },
+        "relToKrino": {
+          "1000": 0.3010078343605452,
+          "10000": 0.3614932589125175,
+          "100000": 0.2298047518505996
+        },
+        "meanRelPct": 30
+      },
+      {
+        "name": "fuse.js",
+        "valid": true,
+        "sdRelPct": 473,
+        "gzipKB": 9.3,
+        "deps": 0,
+        "type": "typo-tolerant",
+        "module": "dual",
+        "updated": "2026-07-13",
+        "features": {
+          "ranges": "opt-in",
+          "tier": "no",
+          "diacritics": "opt-in",
+          "multiWord": "opt-in",
+          "perField": "yes",
+          "typos": "yes"
+        },
+        "perQueryMs": {
+          "1000": 1.3051697136752332,
+          "10000": 13.06840002222222,
+          "100000": 143.05047777777767
+        },
+        "perQuerySdMs": {
+          "1000": 0.03726798990833653,
+          "10000": 0.11728113543267844,
+          "100000": 11.0042319795772
+        },
+        "relToKrino": {
+          "1000": 22.732645052037334,
+          "10000": 21.341382503634843,
+          "100000": 12.080524369405175
+        },
+        "meanRelPct": 1872
+      },
+      {
+        "name": "fuse.js (all opts)",
+        "valid": true,
+        "sdRelPct": 556,
+        "gzipKB": 9.3,
+        "deps": 0,
+        "type": "typo-tolerant",
+        "module": "dual",
+        "updated": "2026-07-13",
+        "features": {
+          "ranges": "opt-in",
+          "tier": "no",
+          "diacritics": "opt-in",
+          "multiWord": "opt-in",
+          "perField": "yes",
+          "typos": "yes"
+        },
+        "perQueryMs": {
+          "1000": 1.519125409090888,
+          "10000": 15.21059260000002,
+          "100000": 165.09449631111104
+        },
+        "perQuerySdMs": {
+          "1000": 0.06827193994913945,
+          "10000": 0.3142993291016721,
+          "100000": 6.8359449747075525
+        },
+        "relToKrino": {
+          "1000": 26.459194043930466,
+          "10000": 24.839695313241474,
+          "100000": 13.94212809997952
+        },
+        "meanRelPct": 2175
+      },
+      {
+        "name": "fast-fuzzy",
+        "valid": true,
+        "sdRelPct": 282,
+        "gzipKB": 11,
+        "deps": 1,
+        "type": "typo-tolerant",
+        "module": "dual",
+        "updated": "2022-11-05",
+        "features": {
+          "ranges": "partial",
+          "tier": "no",
+          "diacritics": "no",
+          "multiWord": "no",
+          "perField": "yes",
+          "typos": "yes"
+        },
+        "perQueryMs": {
+          "1000": 0.6737520266666697,
+          "10000": 5.8093842407407905,
+          "100000": 58.5474898444445
+        },
+        "perQuerySdMs": {
+          "1000": 0.059057007023053956,
+          "10000": 0.12706361004260017,
+          "100000": 10.287625356981106
+        },
+        "relToKrino": {
+          "1000": 11.73499929919101,
+          "10000": 9.48702909165733,
+          "100000": 4.944299304837328
+        },
+        "meanRelPct": 872
+      },
+      {
+        "name": "fast-fuzzy (all opts)",
+        "valid": true,
+        "sdRelPct": 256,
+        "gzipKB": 11,
+        "deps": 1,
+        "type": "typo-tolerant",
+        "module": "dual",
+        "updated": "2022-11-05",
+        "features": {
+          "ranges": "partial",
+          "tier": "no",
+          "diacritics": "no",
+          "multiWord": "no",
+          "perField": "yes",
+          "typos": "yes"
+        },
+        "perQueryMs": {
+          "1000": 0.6620838736383483,
+          "10000": 6.2150964444444305,
+          "100000": 65.62391204444447
+        },
+        "perQuerySdMs": {
+          "1000": 0.028791860483377466,
+          "10000": 0.28900419037712316,
+          "100000": 8.847215608451657
+        },
+        "relToKrino": {
+          "1000": 11.531770570829876,
+          "10000": 10.149578394625458,
+          "100000": 5.541898782750987
+        },
+        "meanRelPct": 907
+      },
+      {
+        "name": "fuzzy",
+        "valid": true,
+        "sdRelPct": 92,
+        "gzipKB": 0.8,
+        "deps": 0,
+        "type": "substring",
+        "module": "cjs",
+        "updated": "2016-10-01",
+        "features": {
+          "ranges": "partial",
+          "tier": "no",
+          "diacritics": "no",
+          "multiWord": "no",
+          "perField": "no",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.2320027908950595,
+          "10000": 2.053694705882377,
+          "100000": 21.79226668888894
+        },
+        "perQuerySdMs": {
+          "1000": 0.07224090693270054,
+          "10000": 0.12009409285014533,
+          "100000": 0.5484220729709153
+        },
+        "relToKrino": {
+          "1000": 4.040882224924023,
+          "10000": 3.3537911442408395,
+          "100000": 1.8403434430234122
+        },
+        "meanRelPct": 308
+      },
+      {
+        "name": "fuzzy (all opts)",
+        "valid": true,
+        "sdRelPct": 97,
+        "gzipKB": 0.8,
+        "deps": 0,
+        "type": "substring",
+        "module": "cjs",
+        "updated": "2016-10-01",
+        "features": {
+          "ranges": "partial",
+          "tier": "no",
+          "diacritics": "no",
+          "multiWord": "no",
+          "perField": "no",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.2466110098039213,
+          "10000": 2.133452256944414,
+          "100000": 23.107587977777925
+        },
+        "perQuerySdMs": {
+          "1000": 0.0853490194122653,
+          "10000": 0.10533221029564455,
+          "100000": 1.9479133640590993
+        },
+        "relToKrino": {
+          "1000": 4.295319216388145,
+          "10000": 3.484039407369739,
+          "100000": 1.951421512323571
+        },
+        "meanRelPct": 324
+      }
+    ],
+    "mixed": [
+      {
+        "name": "@nozbe/microfuzz",
+        "valid": true,
+        "sdRelPct": 51,
+        "gzipKB": 1.7,
+        "deps": 0,
+        "type": "subsequence",
+        "module": "cjs",
+        "updated": "2023-07-18",
+        "features": {
+          "ranges": "yes",
+          "tier": "no",
+          "diacritics": "yes",
+          "multiWord": "yes",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.13093690588238546,
+          "10000": 1.0703269722221194,
+          "100000": 25.62534348888892
+        },
+        "perQuerySdMs": {
+          "1000": 0.05646307466893371,
+          "10000": 0.06449860042897543,
+          "100000": 3.640979283218365
+        },
+        "relToKrino": {
+          "1000": 1.6055216769542087,
+          "10000": 2.814290349791194,
+          "100000": 1.9693274981348539
+        },
+        "meanRelPct": 213
+      },
+      {
+        "name": "@nozbe/microfuzz (all opts)",
+        "valid": true,
+        "sdRelPct": 72,
+        "gzipKB": 1.7,
+        "deps": 0,
+        "type": "subsequence",
+        "module": "cjs",
+        "updated": "2023-07-18",
+        "features": {
+          "ranges": "yes",
+          "tier": "no",
+          "diacritics": "yes",
+          "multiWord": "yes",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.10158748632217335,
+          "10000": 1.1112550716845304,
+          "100000": 21.2406712888892
+        },
+        "perQuerySdMs": {
+          "1000": 0.020044208738237687,
+          "10000": 0.09837376586261122,
+          "100000": 1.0020064250764196
+        },
+        "relToKrino": {
+          "1000": 1.245645070794971,
+          "10000": 2.921905647117789,
+          "100000": 1.6323620429201384
+        },
+        "meanRelPct": 193
+      },
+      {
+        "name": "krino",
+        "valid": true,
+        "sdRelPct": 0,
+        "gzipKB": 2,
+        "deps": 0,
+        "type": "subsequence (tiered)",
+        "module": "esm",
+        "updated": null,
+        "features": {
+          "ranges": "yes",
+          "tier": "yes",
+          "diacritics": "yes",
+          "multiWord": "yes",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.08155411898940056,
+          "10000": 0.3803186022726945,
+          "100000": 13.01223057777776
+        },
+        "perQuerySdMs": {
+          "1000": 0.190339037214904,
+          "10000": 0.03580726715261073,
+          "100000": 0.45701898942313096
+        },
+        "relToKrino": {
+          "1000": 1,
+          "10000": 1,
+          "100000": 1
+        },
+        "meanRelPct": 100
+      },
+      {
+        "name": "krino (all opts)",
+        "valid": true,
+        "sdRelPct": 18,
+        "gzipKB": 2,
+        "deps": 0,
+        "type": "subsequence (tiered)",
+        "module": "esm",
+        "updated": null,
+        "features": {
+          "ranges": "yes",
+          "tier": "yes",
+          "diacritics": "yes",
+          "multiWord": "yes",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.05393391481481463,
+          "10000": 0.4079261476964769,
+          "100000": 9.460677755555176
+        },
+        "perQuerySdMs": {
+          "1000": 0.04899364786507156,
+          "10000": 0.06386842518089521,
+          "100000": 1.5119354332949801
+        },
+        "relToKrino": {
+          "1000": 0.6613266807753061,
+          "10000": 1.072590573426612,
+          "100000": 0.7270604143544833
+        },
+        "meanRelPct": 82
+      },
+      {
+        "name": "match-sorter",
+        "valid": true,
+        "sdRelPct": 213,
+        "gzipKB": 3.4,
+        "deps": 2,
+        "type": "subsequence (tiered)",
+        "module": "dual",
+        "updated": "2026-04-15",
+        "features": {
+          "ranges": "no",
+          "tier": "yes",
+          "diacritics": "yes",
+          "multiWord": "no",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.30406065050502556,
+          "10000": 2.8502843425928774,
+          "100000": 32.50622775555562
+        },
+        "perQuerySdMs": {
+          "1000": 0.11283188254803751,
+          "10000": 0.10690834170875632,
+          "100000": 0.6350234715734614
+        },
+        "relToKrino": {
+          "1000": 3.7283297799408976,
+          "10000": 7.4944647081690166,
+          "100000": 2.498128784396861
+        },
+        "meanRelPct": 457
+      },
+      {
+        "name": "fuzzysort",
+        "valid": true,
+        "sdRelPct": 23,
+        "gzipKB": 3.7,
+        "deps": 0,
+        "type": "subsequence",
+        "module": "cjs",
+        "updated": "2024-10-14",
+        "features": {
+          "ranges": "yes",
+          "tier": "no",
+          "diacritics": "yes",
+          "multiWord": "yes",
+          "perField": "yes",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.025336530732853982,
+          "10000": 0.2742474189434405,
+          "100000": 10.910937977777857
+        },
+        "perQuerySdMs": {
+          "1000": 0.032513521891765325,
+          "10000": 0.058303536466679566,
+          "100000": 0.8823760861825275
+        },
+        "relToKrino": {
+          "1000": 0.31067138051171794,
+          "10000": 0.7210991450447137,
+          "100000": 0.8385140358956993
+        },
+        "meanRelPct": 62
+      },
+      {
+        "name": "uFuzzy",
+        "valid": false,
+        "sdRelPct": 10,
+        "gzipKB": 4.1,
+        "deps": 0,
+        "type": "subsequence",
+        "module": "dual",
+        "updated": "2025-08-22",
+        "features": {
+          "ranges": "yes",
+          "tier": "no",
+          "diacritics": "opt-in",
+          "multiWord": "opt-in",
+          "perField": "no",
+          "typos": "opt-in"
+        },
+        "perQueryMs": {
+          "1000": 0.023133600985599724,
+          "10000": 0.20437321951233256,
+          "100000": 4.8785906190480866
+        },
+        "perQuerySdMs": {
+          "1000": 0.02090334151072288,
+          "10000": 0.006595459423267259,
+          "100000": 3.94547054812871
+        },
+        "relToKrino": {
+          "1000": 0.2836595045384079,
+          "10000": 0.5373737132263483,
+          "100000": 0.374923468339066
+        },
+        "meanRelPct": 40
+      },
+      {
+        "name": "uFuzzy (all opts)",
+        "valid": true,
+        "sdRelPct": 13,
+        "gzipKB": 4.1,
+        "deps": 0,
+        "type": "subsequence",
+        "module": "dual",
+        "updated": "2025-08-22",
+        "features": {
+          "ranges": "yes",
+          "tier": "no",
+          "diacritics": "opt-in",
+          "multiWord": "opt-in",
+          "perField": "no",
+          "typos": "opt-in"
+        },
+        "perQueryMs": {
+          "1000": 0.0243871076160364,
+          "10000": 0.20497060463529357,
+          "100000": 2.9778410648146676
+        },
+        "perQuerySdMs": {
+          "1000": 0.022399655085774257,
+          "10000": 0.006605479604949301,
+          "100000": 0.5290860068729307
+        },
+        "relToKrino": {
+          "1000": 0.2990297475864579,
+          "10000": 0.5389444623808498,
+          "100000": 0.22884939265526186
+        },
+        "meanRelPct": 36
+      },
+      {
+        "name": "fuse.js",
+        "valid": false,
+        "sdRelPct": 1045,
+        "gzipKB": 9.3,
+        "deps": 0,
+        "type": "typo-tolerant",
+        "module": "dual",
+        "updated": "2026-07-13",
+        "features": {
+          "ranges": "opt-in",
+          "tier": "no",
+          "diacritics": "opt-in",
+          "multiWord": "opt-in",
+          "perField": "yes",
+          "typos": "yes"
+        },
+        "perQueryMs": {
+          "1000": 1.7837275730992996,
+          "10000": 13.850073133333353,
+          "100000": 141.9529713555553
+        },
+        "perQuerySdMs": {
+          "1000": 0.5648576572377464,
+          "10000": 0.08496197252695928,
+          "100000": 1.3402943069657143
+        },
+        "relToKrino": {
+          "1000": 21.871704276900196,
+          "10000": 36.41702785656177,
+          "100000": 10.909195814434925
+        },
+        "meanRelPct": 2307
+      },
+      {
+        "name": "fuse.js (all opts)",
+        "valid": true,
+        "sdRelPct": 1186,
+        "gzipKB": 9.3,
+        "deps": 0,
+        "type": "typo-tolerant",
+        "module": "dual",
+        "updated": "2026-07-13",
+        "features": {
+          "ranges": "opt-in",
+          "tier": "no",
+          "diacritics": "opt-in",
+          "multiWord": "opt-in",
+          "perField": "yes",
+          "typos": "yes"
+        },
+        "perQueryMs": {
+          "1000": 1.587767412698273,
+          "10000": 15.511214822222245,
+          "100000": 169.7682425777777
+        },
+        "perQuerySdMs": {
+          "1000": 0.058586820579972144,
+          "10000": 0.24895519966719848,
+          "100000": 8.217124335811258
+        },
+        "relToKrino": {
+          "1000": 19.46888069386946,
+          "10000": 40.784791302689044,
+          "100000": 13.046820955333152
+        },
+        "meanRelPct": 2443
+      },
+      {
+        "name": "fast-fuzzy",
+        "valid": false,
+        "sdRelPct": 550,
+        "gzipKB": 11,
+        "deps": 1,
+        "type": "typo-tolerant",
+        "module": "dual",
+        "updated": "2022-11-05",
+        "features": {
+          "ranges": "partial",
+          "tier": "no",
+          "diacritics": "no",
+          "multiWord": "no",
+          "perField": "yes",
+          "typos": "yes"
+        },
+        "perQueryMs": {
+          "1000": 0.953413592592605,
+          "10000": 6.813549066667069,
+          "100000": 58.10641573333318
+        },
+        "perQuerySdMs": {
+          "1000": 0.1566074417620961,
+          "10000": 0.2203302744206492,
+          "100000": 1.2155881930488506
+        },
+        "relToKrino": {
+          "1000": 11.690563326623865,
+          "10000": 17.915371548882707,
+          "100000": 4.465523062015754
+        },
+        "meanRelPct": 1136
+      },
+      {
+        "name": "fast-fuzzy (all opts)",
+        "valid": false,
+        "sdRelPct": 570,
+        "gzipKB": 11,
+        "deps": 1,
+        "type": "typo-tolerant",
+        "module": "dual",
+        "updated": "2022-11-05",
+        "features": {
+          "ranges": "partial",
+          "tier": "no",
+          "diacritics": "no",
+          "multiWord": "no",
+          "perField": "yes",
+          "typos": "yes"
+        },
+        "perQueryMs": {
+          "1000": 1.406174763888952,
+          "10000": 6.386840277778026,
+          "100000": 64.08551939999937
+        },
+        "perQuerySdMs": {
+          "1000": 0.6701148562002381,
+          "10000": 0.27399471422574123,
+          "100000": 1.704847332685744
+        },
+        "relToKrino": {
+          "1000": 17.242228612287626,
+          "10000": 16.793394379375005,
+          "100000": 4.925021810591367
+        },
+        "meanRelPct": 1299
+      },
+      {
+        "name": "fuzzy",
+        "valid": false,
+        "sdRelPct": 187,
+        "gzipKB": 0.8,
+        "deps": 0,
+        "type": "substring",
+        "module": "cjs",
+        "updated": "2016-10-01",
+        "features": {
+          "ranges": "partial",
+          "tier": "no",
+          "diacritics": "no",
+          "multiWord": "no",
+          "perField": "no",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.25141513116121417,
+          "10000": 2.521334984126923,
+          "100000": 30.424156488888872
+        },
+        "perQuerySdMs": {
+          "1000": 0.028022456477525944,
+          "10000": 0.1178045762462913,
+          "100000": 4.504288325955303
+        },
+        "relToKrino": {
+          "1000": 3.082801142072176,
+          "10000": 6.629533683233001,
+          "100000": 2.3381199946492752
+        },
+        "meanRelPct": 402
+      },
+      {
+        "name": "fuzzy (all opts)",
+        "valid": false,
+        "sdRelPct": 196,
+        "gzipKB": 0.8,
+        "deps": 0,
+        "type": "substring",
+        "module": "cjs",
+        "updated": "2016-10-01",
+        "features": {
+          "ranges": "partial",
+          "tier": "no",
+          "diacritics": "no",
+          "multiWord": "no",
+          "perField": "no",
+          "typos": "no"
+        },
+        "perQueryMs": {
+          "1000": 0.24569475245101,
+          "10000": 2.6151456410257077,
+          "100000": 32.11355464444463
+        },
+        "perQuerySdMs": {
+          "1000": 0.026365674059339348,
+          "10000": 0.15789379345927018,
+          "100000": 6.867121789403393
+        },
+        "relToKrino": {
+          "1000": 3.0126590231811896,
+          "10000": 6.876197023753802,
+          "100000": 2.4679515516185244
+        },
+        "meanRelPct": 412
+      }
+    ]
+  }
 }
