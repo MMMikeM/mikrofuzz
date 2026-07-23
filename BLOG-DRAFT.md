@@ -562,6 +562,54 @@ than its own identical twin. Here's every decision along the way: the engineerin
 - The feared blast radius measured zero: 101 unit tests (no pre-existing expectation moved — they all use spaces), hits and longtext suites green, and `scorecard-run.json` — rewritten unconditionally on every run — came out byte-identical. Not one rank, count, or MRR cell moved on either corpus. The change is real for punctuated fields (product names, paths, `o'brien`) and invisible to every published number.
 - **Takeaway:** when one predicate has two definitions, write the test that asserts they agree *before* unifying them; red proves the bug exists, green proves the fix, and the parity form (`"a-b"` scores like `"a b"`) guards the contract instead of a constant.
 
+## 43. Two coordinate spaces, one string
+
+- A line-by-line analysis of `match.ts` surfaced a bug class no test had ever pinned: match ranges lived in *two* coordinate spaces.
+  The `exact` and `boundary-exact` tiers scanned the raw field and reported raw offsets; every other tier reported offsets into `normalizeText(field)`.
+  The spaces coincide for ASCII, precomposed, untrimmed strings — which is why 100+ tests never noticed — and drift the moment they don't.
+- Three confirmed drifts, each a one-line repro:
+  `"  hello"` + `he` returned `[[0, 1]]`, which highlights `" h"` (the trim shifted everything left).
+  A decomposed `"Café"` (e + combining acute, the form macOS file APIs emit) put every later offset off by one.
+  Hangul silently exploded: NFD turns one syllable into three jamo units, so Korean offsets were fiction.
+- The fix menu ran from "document it" through "lazily remap on drifting fields" to the one we shipped: make normalisation **offset-preserving by construction**.
+  The NFD-strip pipeline (microfuzz inheritance) became a per-code-point fold that guarantees one output unit per input unit — the uFuzzy-latinize / fuzzysort architecture.
+  Folds that would change the length fall back to plain lowercase (Hangul syllables stay whole), then to the original code point (lone combining marks stay put).
+- Honesty forced one concession before a line was written: for decomposed input, *no* 1:1 trick can exist — the matchable `"cafe"` is four units and raw `"café"` is five, pigeonhole.
+  The real contract is: offsets index `NFC(text).trim()`, which **is** the caller's string whenever it is NFC-normal and untrimmed, i.e. virtually all real data.
+  That sentence went in the README instead of a hazard note nobody reads.
+- Unicode trivia that earned its keep: U+0130 (`İ`) is the *only* unconditional one-to-two lowercase expansion in Unicode, and its expansion unit is a combining mark our own strip deletes — it self-cancels.
+  Greek final sigma is the only context-sensitive default lowercase mapping; the per-point fold loses that context, which exposed a live bug — `τελοσ` never matched `ΤΕΛΟΣ` — fixed by folding both sigmas to medial.
+- The safety net for a normalisation rewrite is a characterisation harness, not courage: dump `normalizeText` over 12,274 code points before, diff after.
+  Changed: 200 — the two deliberate fixes plus the Hangul/Indic/lone-mark fallbacks, and **zero Latin code points**, which is what proved the published benchmark numbers couldn't move before the bench re-run confirmed it.
+- Perf came out ahead, twice.
+  The fold beat the five-pass NFD pipeline ~11% on the 100k slow-path sweep; then a mid-review question — "don't maps have a higher insert cost?" — prompted an A/B that replaced the `Map` cache with a dense array through U+04FF: `Map.get`'s string hashing lost 1.8× to an indexed load, and the sweep landed 27% under the original.
+  (Insert cost was the wrong suspect — at most one insert per distinct code point, ever — but the right instinct.)
+- **Takeaway:** an invariant you can state ("one output unit per input unit") beats a remap you must maintain; and when two coordinate systems describe one string, every test that passes is a coincidence.
+
+## 44. The audit that deleted an export
+
+- Round two of the naming audit (§3's was the 0.x vocabulary): every assigned name in `src/`, per file, with a verdict — plus a glossary of the load-bearing words (`field`, `normalized`, `gate`, `survivor`, `fold`) a maintainer must be able to trust everywhere.
+- The finds cluster into three species:
+  - **Fossils.** `smartFuzzyMatch` survived the deletion of the `smart`/`aggressive` strategy enum it was named against; there was nothing left for it to be smarter than. A maintainer who never saw 0.x would go looking for the dumb variant. Now `fuzzyChainMatch`, the docs' own vocabulary.
+  - **Collisions.** `normalizedSpecs` held specs with *defaults resolved* — in a codebase where `normalized*` means "through `normalizeText`" in every other binding, the word was a lie. One genuine collision with a load-bearing term outranks ten mildly-awkward names.
+  - **Drift.** `buildFuzzyGate` and friends were *defined* in fuzzy.ts, *constructed* in search.ts, *tested* in match.ts — placement by history, not concern. The pre-filters got their own `gates.ts`; `shared.ts` (one predicate, and §3 already distrusted the name) became `boundaries.ts`, owning the word class, tokenization, and the boundary predicate side by side — which put the two divergent boundary definitions in one file where the divergence is documented instead of discovered.
+- The placement pass also killed a public export: `matchDensity`, the v1.0 plan's own flagged "say the word and I cut it" item. Zero internal consumers, duplicated maths the scorer inlines, and the maintainer's actual reaction on meeting it — "don't even know what that is" — *was* the word. Unpublished, so not even breaking.
+- The word-class regex was hard-coded in two files under two casings; both now derive from one `WORD_CLASS` source string.
+- **Takeaway:** audit names against the vocabulary the codebase *currently* claims, not the history that produced them. And an export the author can't identify on sight has already failed its API review.
+
+## 45. Redundant by proof, and the regression that was a probe order
+
+- Three flagged-but-unapplied items from the match.ts analysis, built and measured in one pass:
+  - Single-word queries reaching the fuzzy fallback re-ran the `fuzzyGate` regex they had *already passed* as the ladder's front gate — provably a no-op, skipped. Scatter queries at 100k: −9–11%.
+  - `acronymMatch` on a multi-word query is a guaranteed-fail full-field scan: initials never contain a separator. Skipped by construction. Two-word query with the acronym tier on: −28%.
+  - §40's own medicine, taken twice: the offset-preserving rewrite (§43) had quietly added a `lead` number slot to every prepared field — ~0.76 MB at 100k 
+    for a value that is almost always 0. It moved into a lazily-allocated `Int32Array` that never allocates for unpadded corpora.
+- Both skips are argued, not just timed: the guard conditions restate invariants the ladder already enforces, so the A/B is confirmation, not evidence.
+  The stronger check is a sha256 over *full result sets* — three configs × twenty-five queries including the tokenization edges (`"-"`, `"&&"`, padded fields, apostrophes) — byte-identical before and after.
+- The measurement war story: the miss probe showed **+13%, consistently, across four interleaved rounds** — reproducible enough to look real. Reordering the probe list so the miss query ran *first* dissolved it entirely (0.145 vs 0.144 ms): JIT warm-state from the preceding queries, not the change. Interleaving (§35) protects against machine drift; it does not protect against your own harness's execution order.
+- Also declined: fanning the three POCs out to parallel bench agents. Concurrent benches on one box thermally corrupt each other's A/B (§33's lesson), and the coordination overhead exceeded three near-one-line changes. Parallelism is for independent work on independent resources; a shared thermal envelope is neither.
+- **Takeaway:** "provably redundant" is the best class of optimization — the proof is the review. And a *consistent* artifact is still an artifact: vary the harness, not just the machine, before believing a regression.
+
 ## Meta-takeaways (the reusable stuff)
 
 Every decision above traces to one of three principles:
@@ -624,30 +672,6 @@ Every decision above traces to one of three principles:
   a measured 0.143 and 0.211; nobody has to trust taste.
 - **The right default is the one that needs no documentation** — if using the library
   safely requires reading a hazard note, the hazard is the library's to fix.
-
-## 41. Two coordinate spaces, one string
-
-- A line-by-line analysis of `match.ts` surfaced a bug class no test had ever pinned: match ranges lived in *two* coordinate spaces.
-  The `exact` and `boundary-exact` tiers scanned the raw field and reported raw offsets; every other tier reported offsets into `normalizeText(field)`.
-  The spaces coincide for ASCII, precomposed, untrimmed strings — which is why 100+ tests never noticed — and drift the moment they don't.
-- Three confirmed drifts, each a one-line repro:
-  `"  hello"` + `he` returned `[[0, 1]]`, which highlights `" h"` (the trim shifted everything left).
-  A decomposed `"Café"` (e + combining acute, the form macOS file APIs emit) put every later offset off by one.
-  Hangul silently exploded: NFD turns one syllable into three jamo units, so Korean offsets were fiction.
-- The fix menu ran from "document it" through "lazily remap on drifting fields" to the one we shipped: make normalisation **offset-preserving by construction**.
-  The NFD-strip pipeline (microfuzz inheritance) became a per-code-point fold that guarantees one output unit per input unit — the uFuzzy-latinize / fuzzysort architecture.
-  Folds that would change the length fall back to plain lowercase (Hangul syllables stay whole), then to the original code point (lone combining marks stay put).
-- Honesty forced one concession before a line was written: for decomposed input, *no* 1:1 trick can exist — the matchable `"cafe"` is four units and raw `"café"` is five, pigeonhole.
-  The real contract is: offsets index `NFC(text).trim()`, which **is** the caller's string whenever it is NFC-normal and untrimmed, i.e. virtually all real data.
-  That sentence went in the README instead of a hazard note nobody reads.
-- Unicode trivia that earned its keep: U+0130 (`İ`) is the *only* unconditional one-to-two lowercase expansion in Unicode, and its expansion unit is a combining mark our own strip deletes — it self-cancels.
-  Greek final sigma is the only context-sensitive default lowercase mapping; the per-point fold loses that context, which exposed a live bug — `τελοσ` never matched `ΤΕΛΟΣ` — fixed by folding both sigmas to medial.
-- The safety net for a normalisation rewrite is a characterisation harness, not courage: dump `normalizeText` over 12,274 code points before, diff after.
-  Changed: 200 — the two deliberate fixes plus the Hangul/Indic/lone-mark fallbacks, and **zero Latin code points**, which is what proved the published benchmark numbers couldn't move before the bench re-run confirmed it.
-- Perf came out ahead, twice.
-  The fold beat the five-pass NFD pipeline ~11% on the 100k slow-path sweep; then a mid-review question — "don't maps have a higher insert cost?" — prompted an A/B that replaced the `Map` cache with a dense array through U+04FF: `Map.get`'s string hashing lost 1.8× to an indexed load, and the sweep landed 27% under the original.
-  (Insert cost was the wrong suspect — at most one insert per distinct code point, ever — but the right instinct.)
-- **Takeaway:** an invariant you can state ("one output unit per input unit") beats a remap you must maintain; and when two coordinate systems describe one string, every test that passes is a coincidence.
 
 ---
 
