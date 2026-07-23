@@ -115,9 +115,9 @@ than its own identical twin. Here's every decision along the way: the engineerin
   `"fuzzy"`) *alongside* the numeric `score`. The number is the sort key; the tier says
   *what kind* of match it was (a single float can't reliably do both once penalties/fuzzy
   blur the ranges).
-- **`penalty` over `rank`:** a per-field demote-only offset covers the real use case
+- **`atBest` over `rank`:** a per-field demote-only offset covers the real use case
   ("body never outranks title") in one number; a general `rank` merge function was YAGNI
-  (deferred to v1.1). `penalty ⊂ rank`.
+  (deferred to v1.1). `atBest ⊂ rank`.
 - **What got cut:** the `key` option, custom-matcher `strategy` functions (leaked internal
   contracts), a top-level `rank`. Result shape consolidated: parallel `matches[]` + `scores[]`
   → one `fields[]` of `{ score, tier, ranges }`.
@@ -396,7 +396,12 @@ than its own identical twin. Here's every decision along the way: the engineerin
 ## 26. The knob that was a bug wearing an API's clothes
 
 - `strategy: "off"` existed because fuzzy junks over long text — but choosing between `smart` and `off` required exactly the knowledge the library should own.
-- Measured the hazard: a purpose-built long-text bench (corpus joined into one document, probed with words verified absent) showed a smooth S-curve — 5% junk by 128 chars, 35% by 512, 98% by 16k, at every query length.
+- Measured the hazard: a purpose-built long-text bench (corpus joined into one document, probed with words verified absent) showed a smooth S-curve — 5% junk by 128 chars, 35% by 512, 98% by 16k, at every query length (50–100% junk in every query-length bucket from 4 to 13 characters at 4,096 chars).
+
+  | doc chars | 64 | 128 | 256 | 512 | 1024 | 2048 | 4096 | 8192 | 16384 |
+  |-----------|---:|----:|----:|----:|-----:|-----:|-----:|-----:|------:|
+  | junk rate | 0% |  5% | 13% | 35% |  63% |  80% |  85% |  85% |   98% |
+
   No knee means an implicit length-based default would sit mid-slope, silently flipping semantics inside ordinary field sizes. Both options required user homework.
 - The fix was already exported as opt-in (`matchDensity`); moved inside the tier: reject any assembly covering less than 18% of its span.
   The constant is measured, not chosen: 570 junk chains max out at 0.143 density, the sparsest genuine match (initials across a four-word name) is 0.211, and 0.18 splits the gap.
@@ -468,6 +473,94 @@ than its own identical twin. Here's every decision along the way: the engineerin
   - **Drop the columns that only measure jitter:** the 1k size went — every library is sub-ms there, so its cells sat at timer granularity.
   - **Separate the dev loop from the publish ritual:** `BENCH=mixed-10k` scopes a run to one table and deliberately *can't* write the published results file; only full runs can.
 - **Takeaway:** decide your noise model before your numbers, or the numbers will decide your claims.
+
+## 34. The optional chain that taxed every keystroke
+
+- A review-pass modernization rewrote a hot-loop line: `const i = source ? source[k] : k` became `const i = source?.[k] ?? k`. Semantically identical here (in-bounds `Int32Array` reads are never nullish; `??` can't misfire on index 0), so it looked like pure style.
+- An isolated bench of just that expression, in the scan-loop shape (100k-item full scan, 10k survivor scan, medians of 100 samples):
+
+  | variant                  | full scan  | survivors    |
+  |--------------------------|-----------:|-------------:|
+  | `source ? source[k] : k` | ~87–89 µs  | ~13.0–13.3 µs |
+  | `source?.[k] ?? k`       | ~126–128 µs | ~17.4–17.6 µs |
+
+- 1.33–1.45× slower: the ternary is one branch on `source`; the optional chain nullish-checks `source` *and* the loaded value, and on the full-scan path it materializes `undefined` before falling through `??`. V8 does not fold the two forms together.
+- In context that's ~40 µs per 100k query, about 2% of the total: bigger than deltas the benchmarks doc explicitly calls ties.
+- It also encodes a false invariant: `?? k` tells the reader `source[k]` could be nullish. It can't.
+- **Takeaway:** in the loop the library exists for, idioms aren't free, and syntax that implies a wrong invariant misleads the reader and the JIT at the same time.
+
+## 35. The keystroke tax that dissolved under interleaving
+
+- Every query allocated a fresh survivors buffer: `new Int32Array(bound)`. At 100k a full scan's buffer is 400 kB of allocation + zeroing, measured at **64.5 µs** in isolation against **0.33 µs** for a reused buffer. Fix: double-buffer, two persistent count-sized `Int32Array`s swapping roles; the query path became allocation-free, and a sequential before/after run showed full-scan 5.87 → 5.60 ms. Shipped, wrote it up, moved on.
+- Then the claim got the treatment the repo gives every number, and most of it died:
+  - **Interleaved A/B** (fresh process per variant, alternating, four rounds): before ~6.3 ms, after ~6.3 ms. The sequential 5% was machine drift wearing a causal costume.
+  - **GC observer** (`PerformanceObserver`, 500 query pairs): 43 events / 16.8 ms of GC before, 46 / 15.1 ms after. Typed-array churn was never a GC problem; backing stores are cheap to collect.
+  - The "~10% of a warm keystroke" framing was flat wrong: the old code allocated `Int32Array(bound)`, and on warm keystrokes `bound` is the previous survivor count. Warm keystrokes were allocating kilobytes, not 400 kB; only cold full scans paid the big alloc, where 64 µs is ~1% of the 6 ms scan.
+- The change stayed: allocation-free is the right shape for the hot path and the isolated cost is real; but it stayed as a hygiene call priced at two retained count-sized buffers, not as the win the first measurement claimed.
+- **Takeaway:** a sequential before/after measures the machine as much as the change. Interleave fresh processes or the delta isn't yours; the smaller the claimed win, the more this rule bites.
+
+## 36. The preallocation that benchmarked slower
+
+- The same pass cleaned the build loop: spec defaults resolved once instead of per item × field, the per-item `specs.map` closure replaced with an indexed loop, the union-mask pass fused in, and `preparedFields` preallocated with `Array.from({ length: count })`.
+- The preallocation made everything *worse*, consistently across runs: build ~17 → ~20.5 ms, and the untouched query path slowed too (session ~9.25 → ~10.2 ms).
+- `Array.from({ length: n })` materializes n `undefined`s through the generic array-like protocol, and the resulting array taxed reads afterward; the plain push-built array beat it on both ends. Reverting that one line recovered every number.
+- The rest of the cleanup measured noise-neutral and stayed, on strictly-less-work grounds: fewer allocations and passes can't hurt, even when the timer can't see the difference.
+- **Takeaway:** optimizations are hypotheses. Two survived measurement, one died, and the casualty was the one that most resembled a textbook optimization.
+
+## 37. The regex built for nobody, and the spread that copied for nobody
+
+- Same hot-path audit, next block down. Two more allocations died on inspection rather than measurement:
+  - `prepareQuery` built the multi-word presence gate on *every* query, but `matchField` only tests it for multi-word queries whose mask carries digit/non-ASCII bits. Every single-word keystroke (the entire session bench) paid a string-build plus `RegExp` construction for a regex nothing would run. Now built only when that condition holds, which also let the `presenceGateRedundant` flag disappear: the redundancy decision moved from a per-field branch into query prep, and the consumer collapsed to `queryWords.length > 1 ? q.presenceGate : q.fuzzyGate`.
+  - The `atBest` shift spread a copy of every field match: `{ ...result, score: result.score + p.atBest }`. But `matchField` returns a fresh object literal on all nine return paths, nothing caches it, so the shift now mutates in place. The freshness contract is stated in a comment where the mutation happens, because the mutation is only legal while it holds.
+- Also hoisted: the `() => null` callback for the fields array, previously re-allocated per matching item.
+- Full-scan 100k query: 5.5–5.8 → 5.3–5.6 ms. Session and build within noise, as expected for allocation trims.
+- The regression check that matters for a gate change is not the unit suite but the bench validation: every per-library match count and rank, identical before and after.
+- **Takeaway:** allocation work can be deleted by reading the consumer, not just by timing the producer. The presence gate was "cheap" per query and still 100% waste on the dominant path.
+
+## 38. What the searcher actually weighs
+
+- Retained size, measured with `--expose-gc` and settled `heapUsed` deltas (stable and reproducible, unlike the timing in §35):
+
+  | size | retained (index + both survivor buffers) | of which survivor buffers |
+  |------|-----------------------------------------:|--------------------------:|
+  | 10k  | 2.70 MB (~283 B/item)                    | 78 kB                     |
+  | 100k | 23.3 MB (~245 B/item)                    | 781 kB                    |
+
+- ~245 bytes/item is the price of eager preparation: the original string, its normalized form, and the mask (post-§40 diet; it was ~254 B/item before).
+- A first attempt also reported "garbage per query pair" as heapUsed growth with GC off. That number was quietly meaningless: the high-allocation variant triggered GC *during* the loop and came out looking cheaper than the allocation-free one. The defensible churn metric is GC events observed over a fixed workload (§35's observer numbers); heap-growth-without-GC only works when nothing collects, and the variant most worth measuring is exactly the one that collects.
+- **Takeaway:** retained memory is the trustworthy memory number; allocation churn needs a GC-aware methodology or it lies in whichever direction has more garbage.
+
+## 39. Assert on the floor, not the middle
+
+- The pooled-build assertion from §32 (krino's two configs must time within 25% before their cells pool) flaked under background load: `0.261 to be less than 0.25`, medians, machine busy running other benches.
+- The fix follows §33's own rule: noise is one-sided, so the *minimum* is the stable, noise-free floor of a timing distribution; the median under load absorbs whatever the scheduler was doing that morning. The assertion now compares the mins of the interleaved samples (the published cells stay medians).
+- Same tolerance, different statistic; the guard is strictly less flaky without being weaker, because two byte-identical builds' minimums genuinely converge.
+- **Takeaway:** medians are for reporting what users experience; minimums are for asserting what the code is. Use each where it's the right estimator.
+
+## 40. The object that was carrying its spec's luggage
+
+- `PreparedField` held five slots per item × field: two strings, a mask, and `acronym`/`atBest`. The last two are *per-spec constants*: at 100k items, 100k copies of the same boolean and the same number, occupying object slots purely so the inner loop could read them off the nearest object.
+- The diet: `acronym`/`atBest` read from the (already-hoisted) normalized spec array; the per-field masks moved into one flat `Int32Array` (item-major, `i * specCount + f`) beside the union masks; `prepareField` itself dissolved into the build loop, since all it did was assemble the object being slimmed.
+- Retained memory, measured: 25.4 → **23.3 MB** at 100k, 2.93 → **2.70 MB** at 10k (~8%). Timing: unchanged under interleaved A/B, and claimed as such.
+- Match parity: the full bench validation suite, identical counts and ranks everywhere.
+- **Takeaway:** per-instance objects accrete per-*type* data because it's convenient at the call site. The fix is the same normalization discipline as a database schema: constants live with the spec, per-item data lives with the item, and the object that remains is only what varies.
+
+## 41. The "invisible" bug that was 20% of every query
+
+- Auditing `smartFuzzyMatch` by reading, not timing: when a mid-word occurrence fails the 3-char-run check, the scan cursor advanced by *one* from the previous chunk's end (`chunkEnd++`) instead of past the rejected occurrence. `indexOf` then re-found the same occurrence, one creep-step per call: O(gap²) for a single far-away reject.
+- Constructed proof: a 60 kB field with one far reject cost **14.4 ms** in a single `fuzzyMatch` call. The one-line fix (`chunkEnd = idx`) took it to **0.9 ms**. Provably identical results: `indexOf` had returned the *first* occurrence past the cursor, so the skipped range contains nothing.
+- The audit write-up initially called the bug "invisible on label corpora: short fields, tiny gaps." Interleaved A/B said otherwise: full-scan `gra` at 100k went ~6.2–7.0 to ~4.4–5.8 ms, the typing session ~10–11.5 to ~7.4–9.7 ms. Roughly **20%**, consistent direction across alternating rounds. Every ordinary query funnels thousands of gate-surviving fields into the fuzzy matcher, and mid-word rejections happen constantly; a few redundant `indexOf` calls per field, multiplied by corpus, was a fifth of the query.
+- Longtext misses didn't move at all: absent words die at the gates before the creep loop ever runs. The pathological case and the everyday case were the same bug at different magnifications, and intuition ranked them exactly backwards.
+- Match parity held everywhere: unit suite, hits, longtext, identical counts and ranks.
+- **Takeaway:** a quadratic behind a gate doesn't need pathological input, only volume. And per §35, predictions about which workload feels a fix are guesses until interleaved measurement says so; this time the guess undersold the fix instead of overselling it.
+
+## 42. Two definitions of a word boundary, and the fix nobody's tables noticed
+
+- The same audit found the matcher and the scorer disagreeing about what a word boundary is. Chunk *eligibility* used `isValidWordBoundary` (space, hyphens, dots, quotes, slashes...); chunk *scoring* credited word-start and whole-word rates only when the neighbor was literally `" "`. So `fbar` against `"foo-bar"`: the `bar` chunk was admitted *because* the hyphen is a boundary, then priced as if it weren't.
+- Tests went in before the fix, red-first: two parity assertions (`"foo-bar"` must score exactly what `"foo bar"` scores for the same query) and one absolute (a short boundary chunk is a word start at 0.4, not scattered at 1.6). All three failed against the old scorer; that failure is the bug, pinned.
+- The fix is two lines: both boundary checks in the scorer now call `isValidWordBoundary`, the definition the matcher already used. Fuzzy scores stay above `BASE`, so no fuzzy match can cross under `contains`; only fuzzy-vs-fuzzy order can shift, and only around punctuation.
+- The feared blast radius measured zero: 101 unit tests (no pre-existing expectation moved — they all use spaces), hits and longtext suites green, and `scorecard-run.json` — rewritten unconditionally on every run — came out byte-identical. Not one rank, count, or MRR cell moved on either corpus. The change is real for punctuated fields (product names, paths, `o'brien`) and invisible to every published number.
+- **Takeaway:** when one predicate has two definitions, write the test that asserts they agree *before* unifying them; red proves the bug exists, green proves the fix, and the parity form (`"a-b"` scores like `"a b"`) guards the contract instead of a constant.
 
 ## Meta-takeaways (the reusable stuff)
 
