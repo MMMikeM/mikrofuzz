@@ -182,6 +182,41 @@ The current working tree continues the arc:
   two-bullet summary beside the verified capability matrix. Presentation
   lesson from getting there: rank sits before match count, because where the
   right answer lands matters more than how much came back.
+- **The column we measured and never showed.**
+  Reading microfuzz's own docs — "first search ~7 ms, subsequent under 1.5 ms, without indexing" — raised a question ours should have answered: what does *build* cost?
+  It turned out the bench had measured `build index` at every size from day one, and the report script only ever read the query groups.
+  Same class of sin as the corpus that flattered tries: a measured-but-unreported number is an unreported number.
+  The numbers earned the wince — ~7 ms at 10k, ~98 ms at 100k, and ~30% *slower to build* than the parent krino beats on every query.
+  One reframe survived the wince: microfuzz's "first search is slower" is the same bill on a different ledger — lazy prep charges the first keystroke, eager prep charges load time, and paying at load is the better UX.
+- **The fix was deleting a data structure.**
+  Two changes: an ASCII fast path in `normalizeText` (pure-ASCII strings skip the NFD decompose and three regex replaces — checked *after* `toLowerCase`, which can itself surface combining marks: İ → i̇), and killing the per-field `fieldWords` Set.
+  `wholeWordOccurrence` replaced it — a scan for an occurrence bounded by non-word characters on both sides, which yields membership *and* position in one pass.
+  That also fixed a latent highlight bug: the old range came from a left-bounded search, so `"catalog cat"` could underline into "catalog".
+  The trade is real, though: membership went from an O(1) hash hit to an `indexOf` scan, so the multi-word tier now scales with field length instead of word count.
+  For krino's target fields — names, labels — the scan beats hashing; for document-length fields (`strategy: "off"` body text) it's a theoretical regression the short-string bench never measures, bounded in practice by the bitmask gate rejecting most items before any tier runs and the loop stopping at the first absent word.
+  Build cost: 0.89 → 0.24 ms at 1k, 7.4 → 3.2 at 10k, 98 → 54 at 100k.
+- **The surprise was where the win landed.**
+  Deleting 100k Sets cut *query* time at 100k from 13 ms to 3.4 ms — more than the pre-filter gates ever bought — because the heap those Sets occupied was GC and cache pressure on every scan.
+  At small sizes nothing changed; at scale, memory footprint *is* query speed.
+  Sometimes the optimization is not a cleverer structure but the deletion of one.
+- **The reject scan went data-oriented.**
+  The per-item union of field masks moved into one `Int32Array`: the gate now reads 4 bytes per item in a flat walk, and prepared-field objects are only touched by survivors.
+  The union can only false-pass on multi-field items, and the per-field mask check still runs inside the ladder, so correctness holds.
+  Bonus nobody planned: run-to-run variance collapsed — a typed-array walk is far steadier than an object chase.
+- **Then the searcher learned what typing actually is.**
+  Every optimization so far treated queries as independent; the real workload — search on every keystroke — is a *sequence*, where each query extends the last.
+  The prefix-narrowing cache exploits that: remember the previous query's mask-gate survivors, and when the new query extends the old one, rescan only them.
+  The correctness core is a monotonicity argument worth writing down: the cache stores the **mask-pass set**, never the match set — the match set is not monotone under extension ("the quick brown fox" matches `fox brown` via the multi-word tier while failing `fox brow`), but the mask gate is, because extending a query only adds mask bits.
+  A test pins exactly that case; backspace and replacement queries fall back to a full scan via a `startsWith` check.
+  The numbers are the headline of the whole project: typing 15 keystrokes over 100k items fell from 178.9 ms to 27.6 ms, with per-keystroke cost decaying 6.1 → 0.5 ms as survivors narrow — sub-millisecond keystrokes by mid-word, ~25× faster late in the phrase.
+  Cumulative at 100k: build ~100 → 19.2 ms, nine independent mixed queries 83.5 → 13.2 ms, all for +0.1 kB of cache logic.
+  The lesson: profile the workload, not the function — the biggest win of the project came from optimizing the *sequence* of calls, not any single call.
+- **The benchmark our cache ate.**
+  Within the hour of landing the prefix cache, the scorecard reported krino at 0.07 ms — suspiciously half its own speed-table number, and the "too good" smell was right.
+  The scorecard's timing loop re-runs one query for ~50 ms, and the cache fires on equality (`startsWith` is true for the identical string), so every iteration after the first timed the survivor-rescan path while every other library paid a cold scan.
+  The fix times each call individually and busts the cache between samples with a throwaway query no test query extends.
+  The honest number — 0.13 ms — landed within a rounding error of the independent speed table's 0.12, so two separate harnesses now agree, and the headline survived the correction: krino still leads the fast pack on the mixed corpus, it just stopped being twice as flattering.
+  Every cache invalidates a benchmark somewhere; ours invalidated our own within the hour.
 
 ## The through-line
 
@@ -193,5 +228,7 @@ Every decision traces to one of three principles:
    redesign; the byte-identical `.d.ts` check predates the renames; the
    benchmarks verify matching before timing it.
 3. **Tables can lie in the format, not just the data.** Throughput deltas that
-   cap at −100%, corpora that flatter tries, speed rows that skip the task —
-   each got caught and rebuilt.
+   cap at −100%, corpora that flatter tries, speed rows that skip the task, a
+   build cost measured from day one and never shown, a timing loop the prefix
+   cache quietly turned into a different measurement — each got caught and
+   rebuilt.
