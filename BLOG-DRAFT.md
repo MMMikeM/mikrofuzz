@@ -1,4 +1,4 @@
-# From 0.1 to 1.0: rebuilding a fuzzy-search library (and fighting npm to ship it)
+# From 0.1 to 2.0: rebuilding a fuzzy-search library (and catching my own benchmarks lying)
 
 > **Draft stub.** Structure + decisions as bullets. Flesh out prose, add code samples,
 > pick a voice. Working title — swap for something punchier.
@@ -9,12 +9,27 @@ benchmark suite, a rename (it's now **`Krino`**), and a two-hour brawl with npm'
 Then came a *second* pass — where I caught my own benchmarks lying, verified every
 comparison against the competitors' source, and landed a real ~2× speedup. And a
 *third* — the index got ~5× faster to build by deleting a data structure, queries
-learned that typing is a sequence, and two config knobs deleted themselves. Here's
-every decision along the way: the engineering *and* the war stories.
+learned that typing is a sequence, and two config knobs deleted themselves. By the
+end the benchmark harness had become a product of its own: frozen corpora, a
+thirteen-probe test set scored like an IR system, Pareto charts with two ledgers —
+and it kept catching *itself* lying, right up to a config that benchmarked faster
+than its own identical twin. Here's every decision along the way: the engineering
+*and* the war stories.
 
 ---
 
 # Part I — 0.1 → 1.0
+
+## 0. The origin: a comma broke the matcher
+
+- Krino started as `@mmmike/mikrofuzz`, a fork-in-spirit of
+  [@nozbe/microfuzz](https://github.com/Nozbe/microfuzz). The forcing function was
+  real: wiring fuzzy search into a blog — short curated fields searched fuzzily, a
+  multi-KB body-vocabulary field searched contains-only.
+- That integration surfaced six bugs (`KNOWN-ISSUES.md`), the worst being that a
+  **single comma demoted a strong multi-word match into the junk-fuzzy tier** —
+  `"build,"` never equalled `"build"` because punctuation wasn't a word boundary.
+  Real prose broke the matcher. That's the itch behind everything below.
 
 ## 1. Start with the failing state, not the fix
 
@@ -320,52 +335,148 @@ every decision along the way: the engineering *and* the war stories.
 
 # Part III — 1.0 → 2.0: the rebuild pays rent
 
-## 19. The fastest data structure was the one I deleted
+## 19. The column we measured and never showed
 
-- Index build at 100k: ~100 ms → ~20 ms. Biggest slice: killing the per-field word
-  `Set` (a whole-word scan yields membership *and* position in one pass) + an ASCII
-  fast path in normalization.
-- The surprise: deleting 100k Sets cut *query* time more than the pre-filter gates
-  ever did — heap pressure was the real cost. At scale, memory footprint *is* speed.
-- Bonus: the scan fixed a latent highlight bug the Set was masking.
+- Reading microfuzz's own docs — "first search ~7 ms, subsequent under 1.5 ms, without indexing" — raised a question mine should have answered: what does *build* cost?
+- The bench had measured `build index` at every size from day one; the report script only ever read the query groups.
+  Same class of sin as the corpus that flattered tries: **a measured-but-unreported number is an unreported number.**
+- The numbers earned the wince — ~7 ms at 10k, ~98 ms at 100k, and ~30% *slower to build* than the parent Krino beats on every query.
+- One reframe survived the wince: microfuzz's "first search is slower" is the same bill on a different ledger — lazy prep charges the first keystroke, eager prep charges load time, and paying at load is the better UX.
 
-## 20. Typing is a sequence, not ten independent queries
+## 20. The fastest data structure was the one I deleted
 
-- Prefix-narrowing cache: remember the last query's mask-gate survivors; when the new
-  query extends the old one, rescan only them. 15 keystrokes over 100k: 179 → 28 ms.
-- The correctness core is a monotonicity proof: cache the *mask-pass* set, never the
-  match set (which is not monotone — "fox brow" fails where "fox brown" matches).
-- Within the hour, the cache invalidated my own scorecard (it fires on identical
-  repeats). Every cache invalidates a benchmark somewhere; mine got a cache-bust.
+- Two changes: an ASCII fast path in `normalizeText` (pure-ASCII strings skip the NFD decompose and three regex replaces — checked *after* `toLowerCase`, which can itself surface combining marks: İ → i̇), and killing the per-field `fieldWords` Set.
+  `wholeWordOccurrence` replaced it — one scan yields membership *and* position, and it fixed a latent highlight bug the Set was masking (`"catalog cat"` could underline into "catalog").
+- The trade is real: membership went from an O(1) hash hit to an `indexOf` scan, so the multi-word tier now scales with field length instead of word count.
+  For Krino's target fields — names, labels — the scan wins; for document-length text it's a theoretical regression bounded by the bitmask gate and the first-absent-word early exit.
+- Build cost: 0.89 → 0.24 ms at 1k, 7.4 → 3.2 at 10k, 98 → 54 at 100k.
+- **The surprise was where the win landed:** deleting 100k Sets cut *query* time at 100k from 13 ms to 3.4 ms — more than the pre-filter gates ever bought.
+  The heap those Sets occupied was GC and cache pressure on every scan. At scale, **memory footprint is query speed.**
 
-## 21. Every warmup hides somebody's ledger
+## 21. The reject scan went data-oriented
 
-- microfuzz defers prep to its first search; the harness warmup absorbed it — a cost
-  no column owned. Priced it as index = build + first search − one steady search.
-- Then the audit caught fuzzysort doing the same, 87× bigger: first `go()` prepares
-  and caches every target. Its "0.16 ms total" was fiction; honest number ~7 ms.
-- A benchmark that flatters the competitor is still broken. Audit what warmup swallowed.
+- The per-item union of field masks moved into one `Int32Array`: the gate reads 4 bytes per item in a flat walk, and prepared-field objects are only touched by survivors.
+- The union can only false-pass on multi-field items, and the per-field mask still runs inside the ladder — correctness holds.
+- Bonus nobody planned: **run-to-run variance collapsed** — a typed-array walk is far steadier than an object chase.
 
-## 22. Killing my own compatibility mode
+## 22. Typing is a sequence, not ten independent queries
 
-- `strategy: "aggressive"` reproduced microfuzz cell-for-cell — the migration mode.
-  The scorecard ranked it above `smart`, and that reading was MRR-blindness: its edge
-  was junk-that-contains-the-source, bought with 2–17× the rows.
-- Deleted. One opinionated mode is the differentiator; a migration story isn't.
+- Every optimization so far treated queries as independent; the real workload — search on every keystroke — is a *sequence*, where each query extends the last.
+- The prefix-narrowing cache remembers the previous query's mask-gate survivors; when the new query extends the old one, only survivors are rescanned.
+- The correctness core is a monotonicity argument worth writing down: cache the **mask-pass set**, never the match set.
+  The match set is not monotone under extension ("the quick brown fox" matches `fox brown` via the multi-word tier while failing `fox brow`); the mask gate is, because extending a query only adds mask bits.
+  A test pins exactly that case; backspace and replacements fall back to a full scan via a `startsWith` check.
+- The numbers are the headline of the whole project: typing 15 keystrokes over 100k items fell **178.9 → 27.6 ms**, per-keystroke cost decaying 6.1 → 0.5 ms as survivors narrow — sub-millisecond by mid-word.
+  All for +0.1 kB of cache logic.
+- **Takeaway:** profile the workload, not the function. The biggest win of the project optimized the *sequence* of calls, not any single call.
 
-## 23. The knob that was a bug wearing an API's clothes
+## 23. The benchmark our cache ate
 
-- `strategy: "off"` existed because fuzzy junks over long text. Measured it: 5% junk
-  by 128 chars, 98% by 16k, at every query length — a smooth S-curve, no knee, so an
-  implicit length default would sit mid-slope. Both options required user homework.
-- The fix was already exported as opt-in (`matchDensity`); moved inside the tier:
-  reject assemblies covering <18% of their span. Constant measured, not chosen —
-  junk maxes at 0.143 density, sparsest genuine match 0.211.
-- Junk → 0% at every length, labels byte-identical, so `off` lost its job and the
-  whole `strategy` option went with it. Safer *and* smaller — the sign the
-  abstraction was wrong all along.
+- Within the hour of landing the prefix cache, the scorecard reported Krino at 0.07 ms — suspiciously half its own speed-table number. The "too good" smell was right.
+- The scorecard's timing loop re-ran one query for ~50 ms, and the cache fires on equality (`startsWith` is true for the identical string) — every iteration after the first timed the survivor-rescan path while every other library paid a cold scan.
+- Fix: time each call individually and bust the cache between samples with a throwaway query no test query extends.
+  The honest number — 0.13 ms — landed within rounding of the independent speed table's 0.12, so two separate harnesses now agree.
+- **Takeaway:** every cache invalidates a benchmark somewhere; ours invalidated our own within the hour.
+
+## 24. Every warmup hides somebody's ledger
+
+- microfuzz defers part of its preparation to the first search, and the harness warmup absorbed it: not in the index column, not in the query column — a cost no cell owned.
+  Priced as time-to-ready: index = build + first search − one steady search (the subtraction matters — without it a query smuggles into the index cell).
+- The audit then caught a second offender in the same shadow, **87× bigger**: fuzzysort's first `go()` prepares and caches every string target, absorbed by warmup, owned by no column.
+  Its cold one-shot moved from 0.16 ms of fiction to ~7 ms of measurement — off the total-cost frontier entirely.
+- **Takeaway:** a benchmark that flatters the *competitor* is still a broken benchmark. Audit what warmup swallowed.
+
+## 25. Killing my own compatibility mode
+
+- `strategy: "aggressive"` existed to reproduce microfuzz cell-for-cell — the migration mode, the parent's matcher on life support. The bench proved the reproduction: identical counts and ranks on every probe.
+- The scorecard kept ranking it a hair above `smart` (0.58 vs 0.57), and that reading was MRR-blindness: its whole edge was junk-that-contains-the-source on the deep-typo probes, bought with 2–17× the rows everywhere else.
+- v2 removed it. The cost is honest and published: microfuzz now outranks smart on raw MRR in Krino's own scorecard, with the prose explaining why that's the wrong lens.
+- **Takeaway:** one opinionated mode is the differentiator; a compatibility story isn't. Keeping a mode whose only job was to reproduce the behaviour the fork exists to reject was the least Krino-like decision in the codebase.
+
+## 26. The knob that was a bug wearing an API's clothes
+
+- `strategy: "off"` existed because fuzzy junks over long text — but choosing between `smart` and `off` required exactly the knowledge the library should own.
+- Measured the hazard: a purpose-built long-text bench (corpus joined into one document, probed with words verified absent) showed a smooth S-curve — 5% junk by 128 chars, 35% by 512, 98% by 16k, at every query length.
+  No knee means an implicit length-based default would sit mid-slope, silently flipping semantics inside ordinary field sizes. Both options required user homework.
+- The fix was already exported as opt-in (`matchDensity`); moved inside the tier: reject any assembly covering less than 18% of its span.
+  The constant is measured, not chosen: 570 junk chains max out at 0.143 density, the sparsest genuine match (initials across a four-word name) is 0.211, and 0.18 splits the gap.
+- Junk → **0% at every measured length**, label behaviour byte-identical — which zeroed `off`'s reason to exist, so the whole `strategy` option went with it. The long-text bench stayed behind as a zero-junk regression guard.
+- **Takeaway:** safer *and* smaller at the same time is the sign the abstraction was wrong all along. A config knob that exists to dodge a bug *is* the bug.
+
+---
+
+# Part IV — the benchmark becomes a product
+
+> Somewhere in Part III the harness stopped being a script that prints numbers and
+> became the most engineered artifact in the repo. These are the decisions that got
+> it there — most of them made by catching it lying.
+
+## 27. Freeze the corpus; make density a parameter
+
+- The corpora became committed JSON snapshots — bench runs pay no faker generation, and the data can't drift when faker changes between versions.
+  Regenerating is a *deliberate act* (its own test file) that knowingly rewrites every rank table downstream.
+- The accented corpus started at a measured **33% diacritics** — chosen for signal, but wildly over-representative. Recalibrated to a `mixed` corpus at ~5% (every 7th item from fr/pl generators), after measuring that faker's en — and even French *company* — generators produce 0%.
+- Uniqueness measured rather than assumed: ~97% unique at 10k; duplicates are interchangeable strings, so rank checks use first occurrence.
+- **Takeaway:** corpus properties (density, uniqueness, prefix structure) are benchmark *parameters*. Measure them, pin them, version them.
+
+## 28. Score matches like an IR system, then price the noise
+
+- "Average rank" was the intuitive ask and it doesn't survive contact: misses need an invented rank, and one rank-315 result dwarfs seven rank-1s.
+  The standard fix is **MRR** — mean of `1/rank`, miss = 0 — bounded, no imputation, deep ranks self-dampen. A top-10 cutoff added on the grounds that in a UI, rank 47 *is* a miss.
+- The trap arrived immediately: **Fuse.js topped the MRR table** — typo engines land the source at #1 often, *by returning everything* (~170-row result lists).
+  MRR's mandatory companion is **median matches**: find-it score beside noise price. One without the other crowns whoever returns the most.
+- Match count itself was demoted to a *diagnostic*, not a score — any ranked list can be sliced to top-N; junk costs nothing if it's never rendered. What it diagnoses is policy, not quality.
+- **Takeaway:** borrow scoring from the field that spent decades on it, then check who the metric flatters. Every aggregate needs the companion number that keeps it honest.
+
+## 29. Thirteen probes, each with a reason — including the ones Krino loses
+
+- **Derived, not hand-written:** every query is generated from the frozen corpus by a fixed positional rule (first word of item 4, initials of the first 3-word item…). Nobody typed a flattering string, and derivation is what makes *rank* measurable — each query has a known right answer.
+- **One probe per matching behaviour:** long word / short word (length varies how much signal gates get), two-word phrase and its **reversal** (order handling), near-unique prefix, **infix** fragment, word initials (deliberate acronym support vs accidental subsequence hits), accent-stripped, garbage (an engine that matches `qxzwkv` disqualifies its other cells).
+- **Graded degradation instead of a pass/fail cliff:** the first scatter probe (`eeat`, every other letter of "Elegant") failed *everyone* — a test nobody passes measures nothing. It became a three-step gradient of one word (drop one middle char / every third / every other) that locates each engine's *effective fuzzy limit*.
+- **A probe Krino cannot win, on purpose:** a transposed pair (`geenric`) is the one typo shape subsequence matching cannot represent. Only the edit-distance engines surface it — and that honest loss is what prices their scorecards fairly.
+- **Takeaway:** design the probe set so every library has at least one query where its specialty should win. A comparison where the author's library can't lose isn't a comparison.
+
+## 30. Two ledgers, two charts
+
+- Per-query numbers alone can't rank libraries that pay for preparation in different places — eager builds, lazy first-call prep, or no state at all (preparation inside every query).
+  So the scorecard reports **index**, **query**, and **total** (index + one query) separately: frontend ledger (index paid at load, keystrokes pay query) vs backend one-shot ledger (total is the real cost).
+- Each ledger got a Pareto chart — MRR vs cost, log scale, frontier *computed* from the data, not asserted. On the query ledger the frontier is entirely Krino; on the total ledger uFuzzy's no-index configs earn their place and fuzzysort's hidden prepare cost knocks it off.
+- Chart mechanics that turned out to matter: GitHub strips `<style>` blocks, so the SVGs inline every attribute and ship light/dark pairs behind a `<picture>` swap; alt text carries the full finding for screen readers.
+- **Takeaway:** when costs land in different places, one number is an editorial choice. Publish the ledgers and let the reader pick theirs.
+
+## 31. Omit, don't flag
+
+- The mixed-corpus speed table dropped non-folding configurations entirely rather than marking them: a config that silently misses accented matches is timing a *different, easier task*, and we already measured the failure (base uFuzzy: 0 matches on the accent probe).
+- This was the end of an evolution — dagger footnote → Valid column → Pass column → omission — each step conceding that a fast row failing the task isn't a caveat, it's a category error.
+- **Takeaway:** eligibility before ranking. If a row isn't doing the task, it doesn't belong in the table, however honest the footnote.
+
+## 32. The config that benchmarked faster than its own twin
+
+- The scorecard kept showing `krino (acronym)` building its index *faster* than plain Krino — impossible, the acronym flag is query-time only; the builds are byte-identical.
+- Cause: each config's index was timed in its own sequential ~100 ms window, and builds are allocation-heavy — one config's garbage got collected inside the *next* config's window. Order-dependent GC debt, a spurious ~10% gap.
+- Fix one: interleave the samples round-robin with a rotating start, so GC pauses land evenly. Gap fell to ±3% — still enough for a 0.02 ms query delta to flip the Pareto frontier per run.
+- Fix two: since the builds are *provably* the same operation (interleaved head-to-head: equal mins, equal medians), the two cells now **pool into one shared measurement** — with an assertion that fails the suite if the build paths ever genuinely diverge.
+- **Takeaway:** measurements of the same operation deserve the same cell. Pool what you can prove identical, assert it stays identical, and never let sub-resolution noise pick a frontier.
+
+## 33. Noise is one-sided; treat it that way
+
+- Published numbers are **medians of 5 fresh processes**, each cell itself a median of individually-timed calls. The reasoning: timing noise only ever *adds* (GC, scheduler, thermals), so a mean averages the spikes in while a median rejects them.
+- Rules that fell out of the war stories:
+  - **Sub-10% deltas at scale are ties.** Across five runs Krino's own 100k cell ranged 1.9–2.6 ms while uFuzzy's held at 2.3 — a "97% vs 100%" reading is a coin flip, and the doc now says so.
+  - **Rebuild before you measure.** One scorecard ran against a stale `dist/` after source changes and produced numbers 3× off — an entire batch discarded.
+  - **A thermally-soaked machine lies politely.** A flattering 1.49 ms cell from a cold morning run was quietly unreproducible by afternoon; the published claim got softened to what survives *every* run.
+  - **Drop the columns that only measure jitter:** the 1k size went — every library is sub-ms there, so its cells sat at timer granularity.
+  - **Separate the dev loop from the publish ritual:** `BENCH=mixed-10k` scopes a run to one table and deliberately *can't* write the published results file; only full runs can.
+- **Takeaway:** decide your noise model before your numbers, or the numbers will decide your claims.
 
 ## Meta-takeaways (the reusable stuff)
+
+Every decision above traces to one of three principles:
+
+1. **Primitive first.** A stateless, explainable single-string matcher; the collection search is a cache and a loop, nothing more.
+2. **Tests before surgery, receipts before claims.** The suite predates the redesign; the byte-identical `.d.ts` check predates the renames; the benchmarks verify matching before timing it.
+3. **Tables can lie in the format, not just the data.** Capped deltas, flattering corpora, rows that skip the task, a build cost measured and never shown, a timing loop a cache quietly rewrote, a GC shadow that made twins differ — each got caught and rebuilt.
+
 
 **On building it**
 
@@ -401,6 +512,17 @@ every decision along the way: the engineering *and* the war stories.
   *sequence* of calls (typing), not any single call.
 - **Sometimes the optimization is deleting a structure** — heap pressure taxes every scan.
 
+**On benchmarking as a product**
+
+- **Freeze your inputs** — corpus snapshots are versioned data; regeneration is a deliberate act.
+- **Borrow the field's metric, then price its blind spot** — MRR plus median matches; either alone lies.
+- **Give every competitor a probe it should win** — including one your library *can't*.
+- **Publish the ledgers, not a verdict** — index, query, and total are different users' costs.
+- **Eligibility before ranking** — omit rows that aren't doing the task; don't footnote them.
+- **Pool provably-identical measurements** and assert they stay identical — noise must not pick a frontier.
+- **A delta below run-to-run noise is a tie.** Say so in the table.
+- **Every warmup, cache, and format hides a ledger** — audit what each one swallowed.
+
 **On v2**
 
 - **A config knob that exists to dodge a bug *is* the bug** — fix the behaviour, delete
@@ -412,6 +534,27 @@ every decision along the way: the engineering *and* the war stories.
 
 ---
 
-*Appendix ideas: the final API at a glance; the `SCORES` tier ladder; the capability
-matrix; the benchmark methodology + corpus/faker caveats; the front-of-ladder gate (and
-why single-word vs multi-word pick different gates); a diff of the 0.x → 1.0 result shape.*
+## Appendix: the commit map (sessions one and two)
+
+The early history, one line per decision (reconstructed after the original draft was lost in the mikrofuzz → Krino swap):
+
+| commit | decision |
+|---|---|
+| `247a6e6` | tests before surgery — suite asserts tier bands so it survives the fixes |
+| `7cdf024` | oxc tooling (oxlint/oxfmt); stop bikeshedding before refactors |
+| `9ca3888` | split the 283-line index.ts by concern; naming *audit* before renames |
+| `89e4b01` | apply the audit; byte-identical `.d.ts` check proves "internal only"; `sideEffects: false` |
+| `8af922f` | the 1.0 primitive-first redesign; six bug fixes ship inside the breaking release |
+| `f5fa3f9` | unbuild → tsdown; decouple declarations from the TS compiler; bench workspace |
+| `d83c7af` `07c6e1b` | migration guide; perf claims get a machine-readable artifact |
+| `0876804` | npm OIDC trusted publishing — no long-lived token in CI |
+| `ca7bb9e` | fix the speed table's math: relative time, not capped throughput deltas |
+| `f9dc133` | the rename: unscoped, and the name states the philosophy (κρίνω) |
+| `4d39076` | actually minify the bundle so the artifact matches the README claim |
+| `c57ea05` | front-of-ladder pre-filter, gate chosen per query type, pinned by a correctness test |
+| `d54c26b` | faker corpus (the word-grid flattered tries); correctness tests document the uFuzzy gap |
+| `1b32dde` | feature-first comparison; speed demoted to a collapsible |
+
+*Other appendix ideas: the final API at a glance; the `SCORES` tier ladder; the capability
+matrix; the front-of-ladder gate (and why single-word vs multi-word pick different gates);
+a diff of the 0.x → 1.0 result shape.*
