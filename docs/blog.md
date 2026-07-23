@@ -223,6 +223,9 @@ The current working tree continues the arc:
   The fix prices it as time-to-ready: index = build + first search − one steady search, so the index column owns every one-time cost and the query column stays a pure keystroke.
   The subtraction matters — build + first search alone smuggles a query into the index cell; removing one steady search isolates preparation exactly.
   microfuzz's index went 6.8 → 7.8 ms at 10k. A benchmark that flatters the *competitor* is still a broken benchmark.
+  The audit then caught a second offender in the same shadow: fuzzysort's first `go()` prepares and caches every string target — **87×** a steady query at 10k, absorbed by warmup, owned by no column.
+  Its index cell now times an explicit prepare-all pass (the lazy fill is observable only once per process; the explicit pass is the same work, repeatable), and its cold one-shot moved from 0.16 ms of fiction to ~7 ms of measurement — off the total-cost frontier entirely.
+  Two libraries, two directions, one lesson: every warmup absorbs somebody's ledger; audit what it swallowed.
 - **Then the fork finally picked a side.**
   `strategy: "aggressive"` existed to reproduce microfuzz cell-for-cell — the migration mode, the parent's matcher kept on life support.
   The scorecard kept ranking it a hair above `smart` (0.58 vs 0.57), and that reading is exactly the MRR blindness documented above: its whole edge was junk-that-contains-the-source on the deep-typo probes, bought with 2–17× the rows everywhere else.
