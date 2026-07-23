@@ -625,6 +625,30 @@ Every decision above traces to one of three principles:
 - **The right default is the one that needs no documentation** — if using the library
   safely requires reading a hazard note, the hazard is the library's to fix.
 
+## 41. Two coordinate spaces, one string
+
+- A line-by-line analysis of `match.ts` surfaced a bug class no test had ever pinned: match ranges lived in *two* coordinate spaces.
+  The `exact` and `boundary-exact` tiers scanned the raw field and reported raw offsets; every other tier reported offsets into `normalizeText(field)`.
+  The spaces coincide for ASCII, precomposed, untrimmed strings — which is why 100+ tests never noticed — and drift the moment they don't.
+- Three confirmed drifts, each a one-line repro:
+  `"  hello"` + `he` returned `[[0, 1]]`, which highlights `" h"` (the trim shifted everything left).
+  A decomposed `"Café"` (e + combining acute, the form macOS file APIs emit) put every later offset off by one.
+  Hangul silently exploded: NFD turns one syllable into three jamo units, so Korean offsets were fiction.
+- The fix menu ran from "document it" through "lazily remap on drifting fields" to the one we shipped: make normalisation **offset-preserving by construction**.
+  The NFD-strip pipeline (microfuzz inheritance) became a per-code-point fold that guarantees one output unit per input unit — the uFuzzy-latinize / fuzzysort architecture.
+  Folds that would change the length fall back to plain lowercase (Hangul syllables stay whole), then to the original code point (lone combining marks stay put).
+- Honesty forced one concession before a line was written: for decomposed input, *no* 1:1 trick can exist — the matchable `"cafe"` is four units and raw `"café"` is five, pigeonhole.
+  The real contract is: offsets index `NFC(text).trim()`, which **is** the caller's string whenever it is NFC-normal and untrimmed, i.e. virtually all real data.
+  That sentence went in the README instead of a hazard note nobody reads.
+- Unicode trivia that earned its keep: U+0130 (`İ`) is the *only* unconditional one-to-two lowercase expansion in Unicode, and its expansion unit is a combining mark our own strip deletes — it self-cancels.
+  Greek final sigma is the only context-sensitive default lowercase mapping; the per-point fold loses that context, which exposed a live bug — `τελοσ` never matched `ΤΕΛΟΣ` — fixed by folding both sigmas to medial.
+- The safety net for a normalisation rewrite is a characterisation harness, not courage: dump `normalizeText` over 12,274 code points before, diff after.
+  Changed: 200 — the two deliberate fixes plus the Hangul/Indic/lone-mark fallbacks, and **zero Latin code points**, which is what proved the published benchmark numbers couldn't move before the bench re-run confirmed it.
+- Perf came out ahead, twice.
+  The fold beat the five-pass NFD pipeline ~11% on the 100k slow-path sweep; then a mid-review question — "don't maps have a higher insert cost?" — prompted an A/B that replaced the `Map` cache with a dense array through U+04FF: `Map.get`'s string hashing lost 1.8× to an indexed load, and the sweep landed 27% under the original.
+  (Insert cost was the wrong suspect — at most one insert per distinct code point, ever — but the right instinct.)
+- **Takeaway:** an invariant you can state ("one output unit per input unit") beats a remap you must maintain; and when two coordinate systems describe one string, every test that passes is a coincidence.
+
 ---
 
 ## Appendix: the commit map (sessions one and two)
