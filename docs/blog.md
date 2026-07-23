@@ -218,6 +218,18 @@ The current working tree continues the arc:
   The honest number — 0.13 ms — landed within a rounding error of the independent speed table's 0.12, so two separate harnesses now agree, and the headline survived the correction: krino still leads the fast pack on the mixed corpus, it just stopped being twice as flattering.
   Every cache invalidates a benchmark somewhere; ours invalidated our own within the hour.
 
+- **The lazy slice that escaped both ledgers.**
+  microfuzz defers part of its preparation to the first search, and the harness warmup absorbed it: not in the index column, not in the query column — the only cost in the whole comparison that no cell owned.
+  The fix prices it as time-to-ready: index = build + first search − one steady search, so the index column owns every one-time cost and the query column stays a pure keystroke.
+  The subtraction matters — build + first search alone smuggles a query into the index cell; removing one steady search isolates preparation exactly.
+  microfuzz's index went 6.8 → 7.8 ms at 10k. A benchmark that flatters the *competitor* is still a broken benchmark.
+- **Then the fork finally picked a side.**
+  `strategy: "aggressive"` existed to reproduce microfuzz cell-for-cell — the migration mode, the parent's matcher kept on life support.
+  The scorecard kept ranking it a hair above `smart` (0.58 vs 0.57), and that reading is exactly the MRR blindness documented above: its whole edge was junk-that-contains-the-source on the deep-typo probes, bought with 2–17× the rows everywhere else.
+  v2 removed it. `Strategy` is now `"off" | "smart"`: one opinionated fuzzy mode, doing one thing well — the differentiator is the opinion, not a compatibility story.
+  The cost is honest and published: microfuzz now outranks smart on raw MRR in krino's own scorecard, with the prose explaining why that's the wrong lens.
+  Keeping a mode whose only job was to reproduce the behaviour the fork exists to reject was the least krino-like decision in the codebase; deleting it was overdue.
+
 ## The through-line
 
 Every decision traces to one of three principles:
