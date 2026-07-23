@@ -5,7 +5,7 @@
 
 **Hook:** I opened a `KNOWN-ISSUES.md` to fix "a few bugs" in my ~2 kB fuzzy-search
 library. I came out the other side with a breaking v1.0, a new build toolchain, a
-benchmark suite, a rename (it's now **`krino`**), and a two-hour brawl with npm's 2FA.
+benchmark suite, a rename (it's now **`Krino`**), and a two-hour brawl with npm's 2FA.
 Then came a *second* pass — where I caught my own benchmarks lying, verified every
 comparison against the competitors' source, and landed a real ~2× speedup. Here's
 every decision along the way: the engineering *and* the war stories.
@@ -196,13 +196,13 @@ every decision along the way: the engineering *and* the war stories.
 > found both were quietly overselling. Fixing that honestly turned into the most
 > useful engineering of the whole project — including a genuine speedup.
 
-## 12. The rename: `@mmmike/mikrofuzz` → `krino`
+## 12. The rename: `@mmmike/mikrofuzz` → `Krino`
 
-- Dropped the scope, picked a real name. **`krino`**, from Ancient Greek κρίνω ("to
+- Dropped the scope, picked a real name. **`Krino`**, from Ancient Greek κρίνω ("to
   sift, separate") — the root of *criterion*, *discern*, *critic*. A fuzzy matcher
   sifts a list and judges each candidate against a criterion. The name *is* the job.
 - Mechanics: package name, repo / homepage / bugs URLs, keywords, the bench
-  workspace, plus a migration note (old package deprecated in favour of `krino`;
+  workspace, plus a migration note (old package deprecated in favour of `Krino`;
   swap the import, same 1.0 API).
 - **Takeaway:** an unscoped, meaningful name is worth the churn *before* you have
   users. After, it's a migration.
@@ -211,11 +211,11 @@ every decision along the way: the engineering *and* the war stories.
 
 - Reviewing the README before publishing, I caught my own overclaims:
   - *"the smallest option available"* — **false.** `fuzzy` (0.8 kB) and
-    `@nozbe/microfuzz` (1.7 kB — the lib krino forked) are both smaller.
+    `@nozbe/microfuzz` (1.7 kB — the lib Krino forked) are both smaller.
   - *"handles escape characters"* — an **internal** regex-escape (so a `.` in a query
     stays literal) mistaken for a user feature. Invisible plumbing.
   - *"Levenshtein like Bitap"* — imprecise; Bitap ≠ Levenshtein.
-- The size table also **mixed methods**: krino's own artifact vs competitors' numbers
+- The size table also **mixed methods**: Krino's own artifact vs competitors' numbers
   lifted from bundlephobia. Re-measured **all eight** with one method —
   `esbuild --bundle --minify | gzip`, tree-shaken to each lib's primary API (the bytes
   a consumer's bundler actually adds). Numbers moved a lot (uFuzzy 8.7 → 4.1 kB, Fuse
@@ -228,7 +228,7 @@ every decision along the way: the engineering *and* the war stories.
 
 ## 14. Speed is the wrong axis — a feature-first comparison (verified, not guessed)
 
-- At krino's target sizes — palettes, pickers, autocomplete over a few thousand items
+- At Krino's target sizes — palettes, pickers, autocomplete over a few thousand items
   — **every non-typo library answers in well under a millisecond.** Speed doesn't
   decide; capability does.
 - Rebuilt the comparison around a **capability matrix** (ranges / tier / diacritics /
@@ -242,8 +242,8 @@ every decision along the way: the engineering *and* the war stories.
   - uFuzzy's typo tolerance is **opt-in, single-char.**
   - fast-fuzzy's "ranges" are **one span**, not per-character; it doesn't fold
     diacritics by default.
-  - **"Maintained" is not a krino edge** — Fuse and match-sorter both shipped in 2026.
-- The honest position krino can stand on: the only lib returning a categorical `tier`
+  - **"Maintained" is not a Krino edge** — Fuse and match-sorter both shipped in 2026.
+- The honest position Krino can stand on: the only lib returning a categorical `tier`
   *and* numeric ranges, folding diacritics, matching multi-word, with per-field config
   — all default-on, no typo machinery.
 - **Takeaway:** verify each cell of a comparison or don't publish it. And lead with the
@@ -255,7 +255,7 @@ every decision along the way: the engineering *and* the war stories.
   prefixes** → ideal conditions for **trie-based** libraries.
 - Switched to a **seeded faker corpus** (product / company / person / place names) at
   1k / 10k / 100k.
-- **fast-fuzzy flipped from ~4× *faster* than krino to ~4–9× *slower*.** Its trie's
+- **fast-fuzzy flipped from ~4× *faster* than Krino to ~4–9× *slower*.** Its trie's
   whole advantage — pruning subtrees that share prefixes — evaporated on natural-
   language data.
 - **Takeaway:** corpus shape drives benchmark numbers as much as the algorithm does.
@@ -276,10 +276,10 @@ every decision along the way: the engineering *and* the war stories.
 
 ## 17. The real win: borrow uFuzzy's filter — *safely*
 
-- uFuzzy's lesson, applied to krino: reject non-candidates with a **native regex at the
+- uFuzzy's lesson, applied to Krino: reject non-candidates with a **native regex at the
   front of the tier ladder**, before any per-item work runs.
 - **The correctness trap:** uFuzzy's filter is a **subsequence** (in-order) regex. But
-  krino's multi-word tier matches words **out of order** — a subsequence gate would
+  Krino's multi-word tier matches words **out of order** — a subsequence gate would
   wrongly reject `"foo bar"` against `"bar … foo"`. So the front gate had to be
   **order-independent char-presence** (every query char present, in any order) — a valid
   necessary condition for *every* tier, so it can never drop a real match.
@@ -287,9 +287,9 @@ every decision along the way: the engineering *and* the war stories.
   the **stricter, cheaper single-pass subsequence gate**; multi-word queries → the
   presence gate. Best of both.
 - **Result: ~2.2× faster at 100k, ~25% at 1k / 10k**, behavior-identical (all tests
-  green), for +72 bytes gzip. krino now **beats its parent `@nozbe/microfuzz` at every
+  green), for +72 bytes gzip. Krino now **beats its parent `@nozbe/microfuzz` at every
   size** and halved the gap to uFuzzy.
-- **Pinned by a correctness test** — krino matches out-of-order multi-word (and
+- **Pinned by a correctness test** — Krino matches out-of-order multi-word (and
   diacritics) where uFuzzy's default returns nothing. That test *is* the reason the gate
   must be order-independent.
 - **Takeaway:** copying a competitor's optimization means copying its **preconditions.**
@@ -299,8 +299,8 @@ every decision along the way: the engineering *and* the war stories.
 ## 18. Knowing when *not* to optimize
 
 - **A trie, like fast-fuzzy?** No. A prefix trie accelerates only prefix / exact —
-  krino's *cheapest* tiers. Its expensive tiers match mid-string and out of order, and
-  krino returns *all* matches ranked (no single threshold to prune subtrees on). The
+  Krino's *cheapest* tiers. Its expensive tiers match mid-string and out of order, and
+  Krino returns *all* matches ranked (no single threshold to prune subtrees on). The
   genuine scaling levers (inverted-token + trigram index) fight the tiny/simple
   positioning and only pay past 100k. Deferred, and written down so it isn't
   re-litigated.
@@ -338,7 +338,7 @@ every decision along the way: the engineering *and* the war stories.
 - **Corpus shape drives benchmarks** as much as the algorithm — state it, and prefer real
   data over synthetic grids.
 - **Ratios beat capped deltas** for comparisons.
-- **Lead with the axis you actually win on** (for krino: capability, not raw speed).
+- **Lead with the axis you actually win on** (for Krino: capability, not raw speed).
 
 **On making it faster**
 

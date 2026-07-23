@@ -1,13 +1,13 @@
-# From mikrofuzz to krino — a decision log
+# From mikrofuzz to Krino — a decision log
 
 **Status:** draft. Reconstructed from the commit history (`247a6e6..HEAD`),
 CHANGELOG, KNOWN-ISSUES, docs/naming.md, and docs/performance.md after the
-original blog-post file was lost in the mikrofuzz → krino swap. One section per
+original blog-post file was lost in the mikrofuzz → Krino swap. One section per
 commit: what was decided, and why.
 
 ## The origin
 
-krino started as `@mmmike/mikrofuzz`, a fork-in-spirit of
+Krino started as `@mmmike/mikrofuzz`, a fork-in-spirit of
 [@nozbe/microfuzz](https://github.com/Nozbe/microfuzz). The forcing function was
 real: wiring fuzzy search into a blog — short curated fields searched fuzzily, a
 multi-KB body-vocabulary field searched contains-only. That integration surfaced
@@ -97,7 +97,7 @@ format itself can lie.
 
 ## Session two: the rename, and benchmarks that stop lying
 
-### `f9dc133` — mikrofuzz → krino
+### `f9dc133` — mikrofuzz → Krino
 
 **Decision: unscoped name, and a name that states the philosophy.** Krino, from
 κρίνω — "to sift, separate, judge" (same root as *criterion* and *critic*). A
@@ -117,7 +117,7 @@ patch, four lines.
 **Decision: adopt uFuzzy's insight (a native regex can bulk-reject
 non-candidates) without adopting its semantics.** The gate is chosen per query
 type: single-word queries get the strict single-pass subsequence gate;
-multi-word queries need the order-independent presence gate, because krino's
+multi-word queries need the order-independent presence gate, because Krino's
 multi-word tier matches words out of order and a subsequence gate would wrongly
 reject them. ~2.2× at 100k. The distinction is pinned by a correctness test —
 the pre-filter can't silently break the semantics it was built around.
@@ -127,20 +127,20 @@ the pre-filter can't silently break the semantics it was built around.
 **Decision: natural-language benchmark data, because the corpus was flattering
 a competitor.** The original combinatorial word-grid (`ADJ × NOUN × SUFFIX`)
 produced heavy shared prefixes — ideal for fast-fuzzy's trie, which benched ~4×
-faster than krino. On seeded faker names the trie's advantage evaporated
+faster than Krino. On seeded faker names the trie's advantage evaporated
 (fast-fuzzy fell to ~4–9× slower). Corpus shape, not algorithm, drove the
-number. Also added `correctness.test.ts`: the cases krino handles that uFuzzy's
+number. Also added `correctness.test.ts`: the cases Krino handles that uFuzzy's
 defaults don't, so the speed gap has documented context.
 
 ### `1b32dde` — feature-first comparison
 
-**Decision: lead with what you get back, not how fast you got it.** At krino's
+**Decision: lead with what you get back, not how fast you got it.** At Krino's
 target sizes every non-typo library answers in well under a millisecond, so the
 README comparison was rebuilt around a verified capability matrix (ranges /
 tier / diacritics / multi-word / per-field / typos), with size & speed demoted
 to a collapsible section. `docs/performance.md` captured the trie/index
 analysis with a verdict of **defer** — an index fights the tiny-bundle
-positioning and only pays off past krino's stated scale.
+positioning and only pays off past Krino's stated scale.
 
 ## Session three (uncommitted at time of writing)
 
@@ -148,7 +148,7 @@ The current working tree continues the arc:
 
 - **Dual ESM/CJS** with a proper `exports` map (arethetypeswrong-clean). The
   original motive for leaving microfuzz was partly its CJS-only packaging
-  biting in CF Workers / Vite; krino now ships both. Bundle honesty updated:
+  biting in CF Workers / Vite; Krino now ships both. Bundle honesty updated:
   ~2.0 kB.
 - **O(1) char-class bitmask pre-gate** (fuzzysort's trick) in front of the
   regex gates — 0.95 ms → 0.39 ms at 10k. The funnel diagnostics it came with
@@ -160,7 +160,7 @@ The current working tree continues the arc:
   nobody is fast by skipping work, a result sink so the JIT can't
   dead-code-eliminate the timed work, and `hits.test.ts` — every query knows
   which corpus item it was derived from, and every library is scored on
-  matches *and* the rank of that source item. Headline finds: krino's
+  matches *and* the rank of that source item. Headline finds: Krino's
   `aggressive` strategy reproduces microfuzz **cell-for-cell** (that mode *is*
   the parent's behaviour; `smart` is the actual design change), uFuzzy
   silently returns 0 on accent-stripped queries without `latinize`, and the
@@ -169,7 +169,7 @@ The current working tree continues the arc:
   (`eeat`, every other letter of "Elegant") failed *everyone* — a test nobody
   passes measures nothing. It became a three-step gradient of one source word
   (drop one middle char / every third / every other) that locates each
-  engine's effective fuzzy limit: krino's `smart` absorbs a one-char slip with
+  engine's effective fuzzy limit: Krino's `smart` absorbs a one-char slip with
   the smallest result set, then refuses outright at two gaps (returning
   nothing beats returning 135 junk chains); aggressive/microfuzz never give
   up; uFuzzy's defaults never start.
@@ -186,14 +186,14 @@ The current working tree continues the arc:
   Reading microfuzz's own docs — "first search ~7 ms, subsequent under 1.5 ms, without indexing" — raised a question ours should have answered: what does *build* cost?
   It turned out the bench had measured `build index` at every size from day one, and the report script only ever read the query groups.
   Same class of sin as the corpus that flattered tries: a measured-but-unreported number is an unreported number.
-  The numbers earned the wince — ~7 ms at 10k, ~98 ms at 100k, and ~30% *slower to build* than the parent krino beats on every query.
+  The numbers earned the wince — ~7 ms at 10k, ~98 ms at 100k, and ~30% *slower to build* than the parent Krino beats on every query.
   One reframe survived the wince: microfuzz's "first search is slower" is the same bill on a different ledger — lazy prep charges the first keystroke, eager prep charges load time, and paying at load is the better UX.
 - **The fix was deleting a data structure.**
   Two changes: an ASCII fast path in `normalizeText` (pure-ASCII strings skip the NFD decompose and three regex replaces — checked *after* `toLowerCase`, which can itself surface combining marks: İ → i̇), and killing the per-field `fieldWords` Set.
   `wholeWordOccurrence` replaced it — a scan for an occurrence bounded by non-word characters on both sides, which yields membership *and* position in one pass.
   That also fixed a latent highlight bug: the old range came from a left-bounded search, so `"catalog cat"` could underline into "catalog".
   The trade is real, though: membership went from an O(1) hash hit to an `indexOf` scan, so the multi-word tier now scales with field length instead of word count.
-  For krino's target fields — names, labels — the scan beats hashing; for document-length fields (`strategy: "off"` body text) it's a theoretical regression the short-string bench never measures, bounded in practice by the bitmask gate rejecting most items before any tier runs and the loop stopping at the first absent word.
+  For Krino's target fields — names, labels — the scan beats hashing; for document-length fields (`strategy: "off"` body text) it's a theoretical regression the short-string bench never measures, bounded in practice by the bitmask gate rejecting most items before any tier runs and the loop stopping at the first absent word.
   Build cost: 0.89 → 0.24 ms at 1k, 7.4 → 3.2 at 10k, 98 → 54 at 100k.
 - **The surprise was where the win landed.**
   Deleting 100k Sets cut *query* time at 100k from 13 ms to 3.4 ms — more than the pre-filter gates ever bought — because the heap those Sets occupied was GC and cache pressure on every scan.
@@ -212,10 +212,10 @@ The current working tree continues the arc:
   Cumulative at 100k: build ~100 → 19.2 ms, nine independent mixed queries 83.5 → 13.2 ms, all for +0.1 kB of cache logic.
   The lesson: profile the workload, not the function — the biggest win of the project came from optimizing the *sequence* of calls, not any single call.
 - **The benchmark our cache ate.**
-  Within the hour of landing the prefix cache, the scorecard reported krino at 0.07 ms — suspiciously half its own speed-table number, and the "too good" smell was right.
+  Within the hour of landing the prefix cache, the scorecard reported Krino at 0.07 ms — suspiciously half its own speed-table number, and the "too good" smell was right.
   The scorecard's timing loop re-runs one query for ~50 ms, and the cache fires on equality (`startsWith` is true for the identical string), so every iteration after the first timed the survivor-rescan path while every other library paid a cold scan.
   The fix times each call individually and busts the cache between samples with a throwaway query no test query extends.
-  The honest number — 0.13 ms — landed within a rounding error of the independent speed table's 0.12, so two separate harnesses now agree, and the headline survived the correction: krino still leads the fast pack on the mixed corpus, it just stopped being twice as flattering.
+  The honest number — 0.13 ms — landed within a rounding error of the independent speed table's 0.12, so two separate harnesses now agree, and the headline survived the correction: Krino still leads the fast pack on the mixed corpus, it just stopped being twice as flattering.
   Every cache invalidates a benchmark somewhere; ours invalidated our own within the hour.
 
 - **The lazy slice that escaped both ledgers.**
@@ -230,8 +230,8 @@ The current working tree continues the arc:
   `strategy: "aggressive"` existed to reproduce microfuzz cell-for-cell — the migration mode, the parent's matcher kept on life support.
   The scorecard kept ranking it a hair above `smart` (0.58 vs 0.57), and that reading is exactly the MRR blindness documented above: its whole edge was junk-that-contains-the-source on the deep-typo probes, bought with 2–17× the rows everywhere else.
   v2 removed it. `Strategy` is now `"off" | "smart"`: one opinionated fuzzy mode, doing one thing well — the differentiator is the opinion, not a compatibility story.
-  The cost is honest and published: microfuzz now outranks smart on raw MRR in krino's own scorecard, with the prose explaining why that's the wrong lens.
-  Keeping a mode whose only job was to reproduce the behaviour the fork exists to reject was the least krino-like decision in the codebase; deleting it was overdue.
+  The cost is honest and published: microfuzz now outranks smart on raw MRR in Krino's own scorecard, with the prose explaining why that's the wrong lens.
+  Keeping a mode whose only job was to reproduce the behaviour the fork exists to reject was the least Krino-like decision in the codebase; deleting it was overdue.
 
 ## The through-line
 
