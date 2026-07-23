@@ -233,6 +233,14 @@ The current working tree continues the arc:
   The cost is honest and published: microfuzz now outranks smart on raw MRR in Krino's own scorecard, with the prose explaining why that's the wrong lens.
   Keeping a mode whose only job was to reproduce the behaviour the fork exists to reject was the least Krino-like decision in the codebase; deleting it was overdue.
 
+- **Then the strategy knob deleted itself.**
+  Users shouldn't need to know that fuzzy matching junks over long text to use the library safely — but that knowledge was exactly what choosing between `smart` and `off` required.
+  A purpose-built bench (the mixed corpus joined into one document, probed with words verified absent) measured the hazard as a smooth S-curve: 5% junk by 128 chars, 35% by 512, 98% by 16k, at every query length — which killed the tempting fix (an implicit length-based default would sit mid-slope, silently flipping semantics inside ordinary field sizes) and pointed at the real one.
+  `matchDensity` had been sitting in the exports as an opt-in "junk discriminator" the whole time; the fix moved it inside the tier: reject any assembly covering less than 18% of its span.
+  The constant is measured, not chosen: 570 junk chains max out at 0.143 density, the sparsest genuine match (initials across a four-word name) is 0.211, and 0.18 splits the gap.
+  Junk went to 0% at every document length with label behaviour byte-identical — same MRR, same ranks, tighter sets — and that zeroed `off`'s reason to exist, so v2 deleted the `strategy` option entirely: one fuzzy mode, no knowledge required, literal-only still a one-line `tier` filter.
+  The library got safer and smaller at the same time, which is usually the sign the abstraction was wrong: the knob was an escape hatch from a bug wearing an API's clothes.
+
 ## The through-line
 
 Every decision traces to one of three principles:

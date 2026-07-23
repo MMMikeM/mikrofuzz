@@ -7,7 +7,9 @@
 library. I came out the other side with a breaking v1.0, a new build toolchain, a
 benchmark suite, a rename (it's now **`Krino`**), and a two-hour brawl with npm's 2FA.
 Then came a *second* pass — where I caught my own benchmarks lying, verified every
-comparison against the competitors' source, and landed a real ~2× speedup. Here's
+comparison against the competitors' source, and landed a real ~2× speedup. And a
+*third* — the index got ~5× faster to build by deleting a data structure, queries
+learned that typing is a sequence, and two config knobs deleted themselves. Here's
 every decision along the way: the engineering *and* the war stories.
 
 ---
@@ -316,6 +318,53 @@ every decision along the way: the engineering *and* the war stories.
 
 ---
 
+# Part III — 1.0 → 2.0: the rebuild pays rent
+
+## 19. The fastest data structure was the one I deleted
+
+- Index build at 100k: ~100 ms → ~20 ms. Biggest slice: killing the per-field word
+  `Set` (a whole-word scan yields membership *and* position in one pass) + an ASCII
+  fast path in normalization.
+- The surprise: deleting 100k Sets cut *query* time more than the pre-filter gates
+  ever did — heap pressure was the real cost. At scale, memory footprint *is* speed.
+- Bonus: the scan fixed a latent highlight bug the Set was masking.
+
+## 20. Typing is a sequence, not ten independent queries
+
+- Prefix-narrowing cache: remember the last query's mask-gate survivors; when the new
+  query extends the old one, rescan only them. 15 keystrokes over 100k: 179 → 28 ms.
+- The correctness core is a monotonicity proof: cache the *mask-pass* set, never the
+  match set (which is not monotone — "fox brow" fails where "fox brown" matches).
+- Within the hour, the cache invalidated my own scorecard (it fires on identical
+  repeats). Every cache invalidates a benchmark somewhere; mine got a cache-bust.
+
+## 21. Every warmup hides somebody's ledger
+
+- microfuzz defers prep to its first search; the harness warmup absorbed it — a cost
+  no column owned. Priced it as index = build + first search − one steady search.
+- Then the audit caught fuzzysort doing the same, 87× bigger: first `go()` prepares
+  and caches every target. Its "0.16 ms total" was fiction; honest number ~7 ms.
+- A benchmark that flatters the competitor is still broken. Audit what warmup swallowed.
+
+## 22. Killing my own compatibility mode
+
+- `strategy: "aggressive"` reproduced microfuzz cell-for-cell — the migration mode.
+  The scorecard ranked it above `smart`, and that reading was MRR-blindness: its edge
+  was junk-that-contains-the-source, bought with 2–17× the rows.
+- Deleted. One opinionated mode is the differentiator; a migration story isn't.
+
+## 23. The knob that was a bug wearing an API's clothes
+
+- `strategy: "off"` existed because fuzzy junks over long text. Measured it: 5% junk
+  by 128 chars, 98% by 16k, at every query length — a smooth S-curve, no knee, so an
+  implicit length default would sit mid-slope. Both options required user homework.
+- The fix was already exported as opt-in (`matchDensity`); moved inside the tier:
+  reject assemblies covering <18% of their span. Constant measured, not chosen —
+  junk maxes at 0.143 density, sparsest genuine match 0.211.
+- Junk → 0% at every length, labels byte-identical, so `off` lost its job and the
+  whole `strategy` option went with it. Safer *and* smaller — the sign the
+  abstraction was wrong all along.
+
 ## Meta-takeaways (the reusable stuff)
 
 **On building it**
@@ -348,6 +397,18 @@ every decision along the way: the engineering *and* the war stories.
   speedup is a bug.
 - **Measure, then decline** the optimizations that don't pay — saying "no" is how a small
   library stays small.
+- **Profile the workload, not the function** — the project's biggest win optimized the
+  *sequence* of calls (typing), not any single call.
+- **Sometimes the optimization is deleting a structure** — heap pressure taxes every scan.
+
+**On v2**
+
+- **A config knob that exists to dodge a bug *is* the bug** — fix the behaviour, delete
+  the knob.
+- **Derive constants from measurement and publish the derivation** — 0.18 sits between
+  a measured 0.143 and 0.211; nobody has to trust taste.
+- **The right default is the one that needs no documentation** — if using the library
+  safely requires reading a hazard note, the hazard is the library's to fix.
 
 ---
 
