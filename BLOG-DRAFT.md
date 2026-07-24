@@ -610,6 +610,16 @@ than its own identical twin. Here's every decision along the way: the engineerin
 - Also declined: fanning the three POCs out to parallel bench agents. Concurrent benches on one box thermally corrupt each other's A/B (§33's lesson), and the coordination overhead exceeded three near-one-line changes. Parallelism is for independent work on independent resources; a shared thermal envelope is neither.
 - **Takeaway:** "provably redundant" is the best class of optimization — the proof is the review. And a *consistent* artifact is still an artifact: vary the harness, not just the machine, before believing a regression.
 
+## 46. The probe that ranked corpus order, and the MRR that jumped 0.23
+
+- A reader instinct ("if the best libraries all get 9th, is the test smelly?") cracked open the typo probes: the scatter source word was "Generic", which faker's product template stamps into **78 of 10,000 items**. Every engine that matched the word tied across the whole block at identical scores, and the source's "rank 9" was stable-sort corpus position — for Krino, microfuzz, *and* Fuse.js alike. Four of thirteen probes (the three scatter grades and the transposition) were scoring tie-break order, not ranking.
+- It also quietly corrupted a fresh headline: "Krino's rescue tier lands rank 9, level with Fuse.js" was two engines inheriting the same arbitrary block position, not a comparison.
+- The fix keeps the frozen corpus byte-identical and changes only the derivation rule: the scatter source must be **near-unique** (≤ 2 corpus items contain the word). The rule picked "Huguette" on mixed and "Nadiamouth" on ascii — still nobody's hand-typed flattering string.
+- With rank meaning rank, mixed MRR jumped for everyone and spread honestly: Krino (acronym) 0.58 → **0.81**, base Krino 0.54 → **0.77**, Fuse.js 0.71, microfuzz 0.68. Krino now surfaces light and medium scatter *and* the transposition at rank 1 with a single row; the refusal at heavy scatter costs almost nothing because rank-21-in-67-junk-rows scores zero either way.
+- Same pass, two table redesigns from the same conversation: the speed tables gained an **index** column (query cells always excluded build cost; now the table says so and shows it), dropped the 10k column (sub-millisecond cells at timer granularity; the data stays in comparison.json), and dropped the Mean column (an average of relative percentages across sizes describes no workload anyone runs).
+- And one more benchmark lie caught by a physical invariant: two consecutive full runs showed base Krino ~2.4× *slower* than its own acronym configuration — impossible, the acronym config runs strictly more code. Scoped quiet runs showed them equal; the full-suite cells were absorbing accumulated GC and thermal debt. The run that published is the one where the invariant holds.
+- **Takeaway:** every probe needs a right answer that is *uniquely* right, or the metric measures whatever breaks the tie. And keep one physical invariant per table ("more code can't be faster") as a smoke alarm for measurement debt.
+
 ## Meta-takeaways (the reusable stuff)
 
 Every decision above traces to one of three principles:
